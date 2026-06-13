@@ -37,3 +37,19 @@ services:
     - "139"
     - "445"
     - "2049"
+
+nginx:
+  suspicious_patterns:
+    - ".git"
+    - ".env"
+    - ".aws"
+    - ".ssh"
+    - "id_rsa"
+    - "credentials"
+    - "wp-config"
+    - "terraform"
+    - ".htpasswd"
+
+  unicode_detection:
+    enabled: true
+    alert_on_unicode: false
