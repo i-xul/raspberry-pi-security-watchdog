@@ -1,0 +1,39 @@
+telegram:
+  bot_token: "YOUR_TELEGRAM_BOT_TOKEN"
+  chat_id: "YOUR_TELEGRAM_CHAT_ID"
+
+allowed_networks:
+  - "127.0.0.0/8"
+  - "192.168.1.0/24"
+  - "100.64.0.0/10"
+
+watch:
+  ssh_success: true
+  ssh_preauth: true
+  nginx_suspicious: true
+  cockpit_exposure: true
+  service_exposure: true
+
+logs:
+  auth_log: "/var/log/auth.log"
+  nginx_access_log: "/var/log/nginx/access.log"
+  nginx_error_log: "/var/log/nginx/error.log"
+
+services:
+  exposed_allowed:
+    - "22"
+    - "80"
+    - "443"
+
+  monitored_ports:
+    - "22"
+    - "80"
+    - "443"
+    - "5000"
+    - "5001"
+    - "666"
+    - "9090"
+    - "111"
+    - "139"
+    - "445"
+    - "2049"
