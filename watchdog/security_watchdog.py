@@ -5,6 +5,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+import threading
 from pathlib import Path
 
 import yaml
@@ -100,14 +101,10 @@ def handle_nginx_line(line, config):
         )
 
 def handle_line(line, config):
-    match = SSH_ACCEPTED_RE.search(line)
-
-    if not match:
-        return
-
-        accepted_match = SSH_ACCEPTED_RE.search(line)
+    accepted_match = SSH_ACCEPTED_RE.search(line)
 
     if accepted_match:
+
         user = accepted_match.group("user")
         ip = accepted_match.group("ip")
         port = accepted_match.group("port")
@@ -151,15 +148,45 @@ def handle_line(line, config):
         print(f"SSH pre-auth connection: ip={ip} port={port}")
         return
 
+def watch_ssh(config):
+    auth_log = config["logs"]["auth_log"]
 
-def main():
-    config = load_config()
+    print(f"Watching SSH log: {auth_log}")
+
+    for line in follow_file(auth_log):
+        handle_line(line, config)
+
+
+def watch_nginx(config):
     nginx_access_log = config["logs"]["nginx_access_log"]
 
     print(f"Watching Nginx access log: {nginx_access_log}")
 
     for line in follow_file(nginx_access_log):
         handle_nginx_line(line, config)
+
+def main():
+    config = load_config()
+
+    ssh_thread = threading.Thread(
+        target=watch_ssh,
+        args=(config,),
+        daemon=True
+    )
+
+    nginx_thread = threading.Thread(
+        target=watch_nginx,
+        args=(config,),
+        daemon=True
+    )
+
+    ssh_thread.start()
+    nginx_thread.start()
+
+    print("RPi Security Watchdog started")
+
+    ssh_thread.join()
+    nginx_thread.join()
 
 if __name__ == "__main__":
     main()
