@@ -7,6 +7,7 @@ import urllib.parse
 import urllib.request
 import threading
 from pathlib import Path
+from collections import defaultdict
 
 import yaml
 
@@ -23,6 +24,13 @@ SSH_PREAUTH_RE = re.compile(
 
 NGINX_ACCESS_RE = re.compile(
     r'(?P<ip>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status>\d+)'
+)
+
+suspicious_ips = defaultdict(
+    lambda: {
+        "count": 0,
+        "paths": set(),
+    }
 )
 
 def load_config():
@@ -86,9 +94,13 @@ def handle_nginx_line(line, config):
 
     for pattern in suspicious_patterns:
         if pattern.lower() in path.lower():
+            suspicious_ips[ip]["count"] += 1
+            suspicious_ips[ip]["paths"].add(path)
+
             print(
-                f"Suspicious Nginx request: ip={ip} "
-                f"method={method} path={path} status={status} pattern={pattern}"
+                f"Suspicious Nginx request: "
+                f"ip={ip} count={suspicious_ips[ip]['count']} "
+                f"path={path}"
             )
             return
 
