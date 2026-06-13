@@ -20,6 +20,9 @@ SSH_PREAUTH_RE = re.compile(
     r"Connection closed by (?P<ip>\S+) port (?P<port>\d+) \[preauth\]"
 )
 
+NGINX_ACCESS_RE = re.compile(
+    r'(?P<ip>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status>\d+)'
+)
 
 def load_config():
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
@@ -61,6 +64,40 @@ def follow_file(path):
 
             yield line.rstrip("\n")
 
+
+def contains_unicode(value):
+    return any(ord(char) > 127 for char in value)
+
+
+def handle_nginx_line(line, config):
+    match = NGINX_ACCESS_RE.search(line)
+
+    if not match:
+        return
+
+    ip = match.group("ip")
+    method = match.group("method")
+    path = match.group("path")
+    status = match.group("status")
+
+    nginx_config = config.get("nginx", {})
+    suspicious_patterns = nginx_config.get("suspicious_patterns", [])
+
+    for pattern in suspicious_patterns:
+        if pattern.lower() in path.lower():
+            print(
+                f"Suspicious Nginx request: ip={ip} "
+                f"method={method} path={path} status={status} pattern={pattern}"
+            )
+            return
+
+    unicode_config = nginx_config.get("unicode_detection", {})
+
+    if unicode_config.get("enabled", False) and contains_unicode(path):
+        print(
+            f"Interesting Unicode request: ip={ip} "
+            f"method={method} path={path} status={status}"
+        )
 
 def handle_line(line, config):
     match = SSH_ACCEPTED_RE.search(line)
@@ -117,13 +154,12 @@ def handle_line(line, config):
 
 def main():
     config = load_config()
-    auth_log = config["logs"]["auth_log"]
+    nginx_access_log = config["logs"]["nginx_access_log"]
 
-    print(f"Watching SSH log: {auth_log}")
+    print(f"Watching Nginx access log: {nginx_access_log}")
 
-    for line in follow_file(auth_log):
-        handle_line(line, config)
-
+    for line in follow_file(nginx_access_log):
+        handle_nginx_line(line, config)
 
 if __name__ == "__main__":
     main()
