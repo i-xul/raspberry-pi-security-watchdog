@@ -16,6 +16,10 @@ SSH_ACCEPTED_RE = re.compile(
     r"Accepted publickey for (?P<user>\S+) from (?P<ip>\S+) port (?P<port>\d+)"
 )
 
+SSH_PREAUTH_RE = re.compile(
+    r"Connection closed by (?P<ip>\S+) port (?P<port>\d+) \[preauth\]"
+)
+
 
 def load_config():
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
@@ -64,35 +68,51 @@ def handle_line(line, config):
     if not match:
         return
 
-    user = match.group("user")
-    ip = match.group("ip")
-    port = match.group("port")
+        accepted_match = SSH_ACCEPTED_RE.search(line)
 
-    allowed_networks = config["allowed_networks"]
+    if accepted_match:
+        user = accepted_match.group("user")
+        ip = accepted_match.group("ip")
+        port = accepted_match.group("port")
 
-    if ip_allowed(ip, allowed_networks):
-        print(f"Allowed SSH login: user={user} ip={ip}")
+        allowed_networks = config["allowed_networks"]
+
+        if ip_allowed(ip, allowed_networks):
+            print(f"Allowed SSH login: user={user} ip={ip}")
+            return
+
+        hostname = config.get("hostname", "raspberrypi")
+        telegram = config["telegram"]
+
+        message = (
+            "🚨 RPi Security Watchdog\n\n"
+            "SSH login from non-whitelisted IP\n\n"
+            f"Host: {hostname}\n"
+            f"User: {user}\n"
+            f"IP: {ip}\n"
+            f"Port: {port}\n"
+        )
+
+        send_telegram(
+            telegram["bot_token"],
+            telegram["chat_id"],
+            message,
+        )
+
+        print(f"ALERT SSH login: user={user} ip={ip}")
         return
 
-    hostname = config.get("hostname", "raspberrypi")
-    telegram = config["telegram"]
+    preauth_match = SSH_PREAUTH_RE.search(line)
 
-    message = (
-        "🚨 RPi Security Watchdog\n\n"
-        "SSH login from non-whitelisted IP\n\n"
-        f"Host: {hostname}\n"
-        f"User: {user}\n"
-        f"IP: {ip}\n"
-        f"Port: {port}\n"
-    )
+    if preauth_match:
+        ip = preauth_match.group("ip")
+        port = preauth_match.group("port")
 
-    send_telegram(
-        telegram["bot_token"],
-        telegram["chat_id"],
-        message,
-    )
+        if ip_allowed(ip, config["allowed_networks"]):
+            return
 
-    print(f"ALERT SSH login: user={user} ip={ip}")
+        print(f"SSH pre-auth connection: ip={ip} port={port}")
+        return
 
 
 def main():
