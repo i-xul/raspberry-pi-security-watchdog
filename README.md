@@ -14,6 +14,30 @@ Lightweight Raspberry Pi security watchdog for SSH and Nginx monitoring with Tel
 * Systemd service support
 * Logrotate support
 
+## Real-World Detection Example
+
+The watchdog detected a real-world automated web scan targeting exposed `.env` files and other common configuration paths.
+
+After the configured threshold was reached, a Telegram alert was generated automatically.
+
+![Real-world detection example](docs/images/real-world-detection-example.png)
+
+### Example Event
+
+Source IP:
+- 80.94.95.211
+
+Detected Activity:
+- Multiple `.env` probes
+- Laravel environment file scans
+- Configuration file discovery attempts
+
+Watchdog Response:
+- Suspicious requests counted
+- Alert threshold reached
+- Telegram notification sent
+- Event written to persistent log
+
 ## Monitored Events
 
 ### SSH
