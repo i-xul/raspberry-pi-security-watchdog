@@ -8,6 +8,7 @@ import urllib.request
 import threading
 from pathlib import Path
 from collections import defaultdict
+from datetime import datetime
 
 import yaml
 
@@ -32,6 +33,8 @@ suspicious_ips = defaultdict(
         "paths": set(),
     }
 )
+
+last_alert_times = {}
 
 def load_config():
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
@@ -77,6 +80,21 @@ def follow_file(path):
 def contains_unicode(value):
     return any(ord(char) > 127 for char in value)
 
+def should_send_alert(ip, cooldown_minutes):
+    now = time.time()
+    cooldown_seconds = cooldown_minutes * 60
+
+    last_alert = last_alert_times.get(ip)
+
+    if last_alert is None:
+        last_alert_times[ip] = now
+        return True
+
+    if now - last_alert >= cooldown_seconds:
+        last_alert_times[ip] = now
+        return True
+
+    return False
 
 def handle_nginx_line(line, config):
     match = NGINX_ACCESS_RE.search(line)
@@ -91,17 +109,46 @@ def handle_nginx_line(line, config):
 
     nginx_config = config.get("nginx", {})
     suspicious_patterns = nginx_config.get("suspicious_patterns", [])
+    alert_threshold = nginx_config.get("alert_threshold", 10)
+    cooldown_minutes = nginx_config.get("cooldown_minutes", 30)
 
     for pattern in suspicious_patterns:
         if pattern.lower() in path.lower():
             suspicious_ips[ip]["count"] += 1
             suspicious_ips[ip]["paths"].add(path)
 
+            count = suspicious_ips[ip]["count"]
+
             print(
                 f"Suspicious Nginx request: "
-                f"ip={ip} count={suspicious_ips[ip]['count']} "
+                f"ip={ip} count={count} "
                 f"path={path}"
             )
+
+            if count >= alert_threshold and should_send_alert(ip, cooldown_minutes):
+                hostname = config.get("hostname", "raspberrypi")
+                telegram = config["telegram"]
+
+                example_paths = list(suspicious_ips[ip]["paths"])[:5]
+                examples = "\n".join(f"- {example}" for example in example_paths)
+
+                message = (
+                    "⚠️ RPi Security Watchdog\n\n"
+                    "Suspicious web scan detected\n\n"
+                    f"Host: {hostname}\n"
+                    f"IP: {ip}\n"
+                    f"Requests: {count}\n\n"
+                    f"Examples:\n{examples}"
+                )
+
+                send_telegram(
+                    telegram["bot_token"],
+                    telegram["chat_id"],
+                    message,
+                )
+
+                print(f"Telegram alert sent for suspicious Nginx activity: ip={ip}")
+
             return
 
     unicode_config = nginx_config.get("unicode_detection", {})

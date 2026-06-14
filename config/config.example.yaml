@@ -53,3 +53,6 @@ nginx:
   unicode_detection:
     enabled: true
     alert_on_unicode: false
+
+  alert_threshold: 10
+  cooldown_minutes: 30
