@@ -32,6 +32,11 @@ service_exposure:
       "445": "Samba SMB"
       "2049": "NFS"
 
+samba:
+  enabled: true
+  log_dir: "/var/log/samba"
+  alert_on_unknown_client_logs: true
+
 services:
   exposed_allowed:
     - "22"

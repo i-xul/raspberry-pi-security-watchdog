@@ -229,6 +229,70 @@ def handle_line(line, config):
         print(f"SSH pre-auth connection: ip={ip} port={port}")
         return
 
+def check_samba_client_logs(config):
+    samba_config = config.get("samba", {})
+
+    if not samba_config.get("enabled", False):
+        return
+
+    if not samba_config.get("alert_on_unknown_client_logs", False):
+        return
+
+    log_dir = Path(samba_config.get("log_dir", "/var/log/samba"))
+    allowed_networks = config["allowed_networks"]
+
+    if not log_dir.exists():
+        print(f"Samba log directory not found: {log_dir}")
+        return
+
+    unknown_clients = []
+
+    for log_file in log_dir.glob("log.*"):
+        suffix = log_file.name.replace("log.", "", 1)
+
+        try:
+            ipaddress.ip_address(suffix)
+        except ValueError:
+            continue
+
+        if not ip_allowed(suffix, allowed_networks):
+            unknown_clients.append(suffix)
+
+    if not unknown_clients:
+        print("Samba client log check: no unknown client logs found")
+        return
+
+    hostname = config.get("hostname", "raspberrypi")
+    telegram = config["telegram"]
+
+    message_lines = [
+        "⚠️ RPi Security Watchdog",
+        "",
+        "Unknown Samba client log detected",
+        "",
+        f"Host: {hostname}",
+        "",
+    ]
+
+    for ip in unknown_clients[:10]:
+        message_lines.append(f"- {ip}")
+
+    message = "\n".join(message_lines)
+
+    send_telegram(
+        telegram["bot_token"],
+        telegram["chat_id"],
+        message,
+    )
+
+    for ip in unknown_clients:
+        print(f"Unknown Samba client log found: ip={ip}")
+        write_event_log(
+            config,
+            "SAMBA_UNKNOWN_CLIENT_LOG",
+            f"ip={ip}"
+        )
+
 def check_service_exposure(config):
     exposure_config = config.get("service_exposure", {})
 
@@ -336,6 +400,7 @@ def main():
     config = load_config()
 
     check_service_exposure(config)
+    check_samba_client_logs(config)
 
     ssh_thread = threading.Thread(
         target=watch_ssh,
