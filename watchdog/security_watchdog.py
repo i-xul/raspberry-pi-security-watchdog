@@ -80,17 +80,36 @@ def ip_allowed(ip, allowed_networks):
 
 
 def follow_file(path):
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        f.seek(0, 2)
+    path = Path(path)
 
-        while True:
-            line = f.readline()
+    while True:
+        try:
+            with path.open("r", encoding="utf-8", errors="replace") as f:
+                f.seek(0, 2)
+                current_inode = path.stat().st_ino
 
-            if not line:
-                time.sleep(0.5)
-                continue
+                while True:
+                    line = f.readline()
 
-            yield line.rstrip("\n")
+                    if line:
+                        yield line.rstrip("\n")
+                        continue
+
+                    try:
+                        latest_inode = path.stat().st_ino
+                    except FileNotFoundError:
+                        time.sleep(1)
+                        break
+
+                    if latest_inode != current_inode:
+                        print(f"Log rotation detected: {path}")
+                        break
+
+                    time.sleep(0.5)
+
+        except FileNotFoundError:
+            print(f"Log file not found, waiting: {path}")
+            time.sleep(2)
 
 
 def contains_unicode(value):
