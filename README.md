@@ -112,5 +112,5 @@ journalctl -u raspberry-pi-security-watchdog.service -f
 
 ## License
 
-MIT License
+This project is licensed under the MIT License.
 
