@@ -134,6 +134,19 @@ Systemd logs:
 journalctl -u raspberry-pi-security-watchdog.service -f
 ```
 
+## Roadmap
+
+Planned future improvements:
+
+- Top attacker IP tracking
+- Telegram command support, such as `/top_ips`
+- GeoIP enrichment for suspicious IP addresses
+- Weekly security summary reports
+- Fail2ban integration
+- TLS certificate expiration monitoring
+- Optional firewall audit support for UFW, iptables and nftables
+- Web dashboard and JSON API for recent events and statistics
+
 ## License
 
 This project is licensed under the MIT License.
