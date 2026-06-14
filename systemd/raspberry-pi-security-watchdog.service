@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/hmasi/raspberry-pi-security-watchdog
-ExecStart=/usr/bin/python3 /home/hmasi/raspberry-pi-security-watchdog/watchdog/security_watchdog.py
+ExecStart=/usr/bin/python3 -u /home/hmasi/raspberry-pi-security-watchdog/watchdog/security_watchdog.py
 Restart=always
 RestartSec=10
 User=hmasi
