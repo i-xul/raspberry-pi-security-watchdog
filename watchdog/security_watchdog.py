@@ -52,6 +52,14 @@ def send_telegram(bot_token, chat_id, message):
     with urllib.request.urlopen(url, data=data, timeout=10) as response:
         return response.read().decode("utf-8")
 
+def write_event_log(config, event_type, message):
+    log_path = Path(config["logs"].get("watchdog_log", "logs/security_watchdog.log"))
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"{timestamp} [{event_type}] {message}\n")
 
 def ip_allowed(ip, allowed_networks):
     ip_obj = ipaddress.ip_address(ip)
@@ -148,6 +156,11 @@ def handle_nginx_line(line, config):
                 )
 
                 print(f"Telegram alert sent for suspicious Nginx activity: ip={ip}")
+                write_event_log(
+                    config,
+                    "NGINX_SCAN_ALERT",
+                    f"ip={ip} requests={count} examples={','.join(example_paths)}"
+                )
 
             return
 
@@ -193,6 +206,11 @@ def handle_line(line, config):
         )
 
         print(f"ALERT SSH login: user={user} ip={ip}")
+        write_event_log(
+            config,
+            "SSH_LOGIN_ALERT",
+            f"user={user} ip={ip} port={port}"
+        )
         return
 
     preauth_match = SSH_PREAUTH_RE.search(line)

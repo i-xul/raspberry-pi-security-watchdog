@@ -18,6 +18,7 @@ logs:
   auth_log: "/var/log/auth.log"
   nginx_access_log: "/var/log/nginx/access.log"
   nginx_error_log: "/var/log/nginx/error.log"
+  watchdog_log: "logs/security_watchdog.log"
 
 services:
   exposed_allowed:
