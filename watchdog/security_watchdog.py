@@ -52,8 +52,13 @@ def send_telegram(bot_token, chat_id, message):
         "text": message,
     }).encode("utf-8")
 
-    with urllib.request.urlopen(url, data=data, timeout=10) as response:
-        return response.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(url, data=data, timeout=10) as response:
+            return response.read().decode("utf-8")
+
+    except Exception as error:
+        print(f"Telegram notification failed: {error}")
+        return None
 
 def write_event_log(config, event_type, message):
     log_path = Path(config["logs"].get("watchdog_log", "logs/security_watchdog.log"))
