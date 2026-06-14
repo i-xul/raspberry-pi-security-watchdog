@@ -36,6 +36,7 @@ samba:
   enabled: true
   log_dir: "/var/log/samba"
   alert_on_unknown_client_logs: true
+  max_log_age_days: 7
 
 services:
   exposed_allowed:

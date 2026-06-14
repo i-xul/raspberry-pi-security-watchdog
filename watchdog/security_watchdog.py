@@ -238,6 +238,8 @@ def check_samba_client_logs(config):
     if not samba_config.get("alert_on_unknown_client_logs", False):
         return
 
+    max_log_age_days = samba_config.get("max_log_age_days", 7)
+
     log_dir = Path(samba_config.get("log_dir", "/var/log/samba"))
     allowed_networks = config["allowed_networks"]
 
@@ -248,6 +250,14 @@ def check_samba_client_logs(config):
     unknown_clients = []
 
     for log_file in log_dir.glob("log.*"):
+
+        age_days = (
+            time.time() - log_file.stat().st_mtime
+        ) / 86400
+
+        if age_days > max_log_age_days:
+            continue
+
         suffix = log_file.name.replace("log.", "", 1)
 
         try:
