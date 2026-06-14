@@ -22,6 +22,7 @@ logs:
 
 service_exposure:
     enabled: true
+    check_interval_seconds: 21600
     risky_ports:
       "9090": "Cockpit"
       "5000": "Flask app 5000"

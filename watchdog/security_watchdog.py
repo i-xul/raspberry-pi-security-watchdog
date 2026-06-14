@@ -423,6 +423,14 @@ def cleanup_tracked_ips(config):
 
         time.sleep(cleanup_interval)
 
+def watch_service_exposure(config):
+    exposure_config = config.get("service_exposure", {})
+    check_interval = exposure_config.get("check_interval_seconds", 21600)
+
+    while True:
+        check_service_exposure(config)
+        time.sleep(check_interval)
+
 def watch_ssh(config):
     auth_log = config["logs"]["auth_log"]
 
@@ -443,11 +451,17 @@ def watch_nginx(config):
 def main():
     config = load_config()
 
-    check_service_exposure(config)
+   # check_service_exposure(config)
     check_samba_client_logs(config)
 
     ssh_thread = threading.Thread(
         target=watch_ssh,
+        args=(config,),
+        daemon=True
+    )
+
+    exposure_thread = threading.Thread(
+        target=watch_service_exposure,
         args=(config,),
         daemon=True
     )
@@ -465,12 +479,14 @@ def main():
     )
 
     ssh_thread.start()
+    exposure_thread.start()
     nginx_thread.start()
     cleanup_thread.start()
 
     print("RPi Security Watchdog started")
 
     ssh_thread.join()
+    exposure_thread.join()
     nginx_thread.join()
     cleanup_thread.join()
 
