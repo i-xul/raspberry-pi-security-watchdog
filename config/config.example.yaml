@@ -20,6 +20,18 @@ logs:
   nginx_error_log: "/var/log/nginx/error.log"
   watchdog_log: "logs/security_watchdog.log"
 
+service_exposure:
+    enabled: true
+    risky_ports:
+      "9090": "Cockpit"
+      "5000": "Flask app 5000"
+      "5001": "Flask app 5001"
+      "666": "darkstat"
+      "111": "rpcbind"
+      "139": "Samba NetBIOS"
+      "445": "Samba SMB"
+      "2049": "NFS"
+
 services:
   exposed_allowed:
     - "22"

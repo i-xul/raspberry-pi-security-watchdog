@@ -6,6 +6,7 @@ import time
 import urllib.parse
 import urllib.request
 import threading
+import subprocess
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime
@@ -228,6 +229,70 @@ def handle_line(line, config):
         print(f"SSH pre-auth connection: ip={ip} port={port}")
         return
 
+def check_service_exposure(config):
+    exposure_config = config.get("service_exposure", {})
+
+    if not exposure_config.get("enabled", False):
+        return
+
+    risky_ports = exposure_config.get("risky_ports", {})
+
+    try:
+        result = subprocess.run(
+            ["ss", "-tulpn"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        print(f"Service exposure check failed: {error}")
+        return
+
+    exposed_services = []
+
+    for line in result.stdout.splitlines():
+        for port, service_name in risky_ports.items():
+            if re.search(rf"[:\]]{port}\b", line):
+                if "127.0.0.1" in line or "[::1]" in line:
+                    continue
+
+                exposed_services.append((port, service_name, line.strip()))
+
+    if not exposed_services:
+        print("Service exposure check: no risky services exposed")
+        return
+
+    hostname = config.get("hostname", "raspberrypi")
+    telegram = config["telegram"]
+
+    message_lines = [
+        "⚠️ RPi Security Watchdog",
+        "",
+        "Risky service exposure detected",
+        "",
+        f"Host: {hostname}",
+        "",
+    ]
+
+    for port, service_name, _line in exposed_services:
+        message_lines.append(f"- {service_name} on port {port}")
+
+    message = "\n".join(message_lines)
+
+    send_telegram(
+        telegram["bot_token"],
+        telegram["chat_id"],
+        message,
+    )
+
+    for port, service_name, line in exposed_services:
+        print(f"Risky service exposed: {service_name} port={port}")
+        write_event_log(
+            config,
+            "SERVICE_EXPOSURE",
+            f"service={service_name} port={port} line={line}"
+        )
+
 def cleanup_tracked_ips(config):
     nginx_config = config.get("nginx", {})
     cleanup_interval = nginx_config.get("cleanup_interval_seconds", 300)
@@ -269,6 +334,8 @@ def watch_nginx(config):
 
 def main():
     config = load_config()
+
+    check_service_exposure(config)
 
     ssh_thread = threading.Thread(
         target=watch_ssh,
