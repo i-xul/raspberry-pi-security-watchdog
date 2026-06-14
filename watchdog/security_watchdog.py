@@ -39,6 +39,8 @@ suspicious_ips = defaultdict(
 
 last_alert_times = {}
 
+state_lock = threading.RLock()
+
 def load_config():
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -119,15 +121,18 @@ def should_send_alert(ip, cooldown_minutes):
     now = time.time()
     cooldown_seconds = cooldown_minutes * 60
 
-    last_alert = last_alert_times.get(ip)
+    with state_lock:
+        last_alert = last_alert_times.get(ip)
 
     if last_alert is None:
-        last_alert_times[ip] = now
-        return True
+        with state_lock:
+            last_alert_times[ip] = now
+            return True
 
     if now - last_alert >= cooldown_seconds:
-        last_alert_times[ip] = now
-        return True
+        with state_lock:
+            last_alert_times[ip] = now
+            return True
 
     return False
 
@@ -149,9 +154,10 @@ def handle_nginx_line(line, config):
 
     for pattern in suspicious_patterns:
         if pattern.lower() in path.lower():
-            suspicious_ips[ip]["count"] += 1
-            suspicious_ips[ip]["paths"].add(path)
-            suspicious_ips[ip]["last_seen"] = time.time()
+            with state_lock:
+                suspicious_ips[ip]["count"] += 1
+                suspicious_ips[ip]["paths"].add(path)
+                suspicious_ips[ip]["last_seen"] = time.time()
 
             count = suspicious_ips[ip]["count"]
 
@@ -401,16 +407,19 @@ def cleanup_tracked_ips(config):
         now = time.time()
         removed_ips = []
 
-        for ip, data in list(suspicious_ips.items()):
-            if now - data["last_seen"] > ttl_seconds:
-                removed_ips.append(ip)
-                del suspicious_ips[ip]
+        with state_lock:
+            for ip, data in list(suspicious_ips.items()):
+                if now - data["last_seen"] > ttl_seconds:
+                    removed_ips.append(ip)
+                    del suspicious_ips[ip]
 
         for ip in removed_ips:
-            last_alert_times.pop(ip, None)
+            with state_lock:
+                last_alert_times.pop(ip, None)
 
-        if removed_ips:
-            print(f"Cleaned up tracked IPs: count={len(removed_ips)}")
+        with state_lock:
+            if removed_ips:
+                print(f"Cleaned up tracked IPs: count={len(removed_ips)}")
 
         time.sleep(cleanup_interval)
 
