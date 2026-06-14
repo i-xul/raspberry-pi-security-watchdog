@@ -1,0 +1,8 @@
+/home/hmasi/raspberry-pi-security-watchdog/logs/security_watchdog.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    create 0644 hmasi hmasi
+}
