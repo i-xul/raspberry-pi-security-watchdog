@@ -14,6 +14,11 @@ watch:
   cockpit_exposure: true
   service_exposure: true
 
+nfs:
+  enabled: true
+  check_interval_seconds: 300
+  alert_on_unknown_clients: true
+
 logs:
   auth_log: "/var/log/auth.log"
   nginx_access_log: "/var/log/nginx/access.log"

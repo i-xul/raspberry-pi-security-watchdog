@@ -423,6 +423,98 @@ def cleanup_tracked_ips(config):
 
         time.sleep(cleanup_interval)
 
+def check_nfs_clients(config):
+    nfs_config = config.get("nfs", {})
+
+    if not nfs_config.get("enabled", False):
+        return
+
+    if not nfs_config.get("alert_on_unknown_clients", False):
+        return
+
+    try:
+        result = subprocess.run(
+            ["ss", "-tn", "sport", "=", ":2049"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        print(f"NFS client check failed: {error}")
+        return
+
+    allowed_networks = config["allowed_networks"]
+    unknown_clients = set()
+    seen_clients = set()
+
+    for line in result.stdout.splitlines():
+        if "Peer Address:Port" in line:
+            continue
+
+        parts = line.split()
+
+        if len(parts) < 5:
+            continue
+
+        peer = parts[4]
+        peer_ip = peer.rsplit(":", 1)[0]
+
+        try:
+            ipaddress.ip_address(peer_ip)
+        except ValueError:
+            continue
+
+        seen_clients.add(peer_ip)
+
+        if not ip_allowed(peer_ip, allowed_networks):
+            unknown_clients.add(peer_ip)
+
+    if seen_clients:
+        print(f"NFS clients seen: {', '.join(sorted(seen_clients))}")
+
+    if not unknown_clients:
+        return
+
+    hostname = config.get("hostname", "raspberrypi")
+    telegram = config["telegram"]
+
+    message_lines = [
+        "⚠️ RPi Security Watchdog",
+        "",
+        "Unknown NFS client detected",
+        "",
+        f"Host: {hostname}",
+        "",
+    ]
+
+    for ip in sorted(unknown_clients):
+        message_lines.append(f"- {ip}")
+
+    message = "\n".join(message_lines)
+
+    send_telegram(
+        telegram["bot_token"],
+        telegram["chat_id"],
+        message,
+    )
+
+    for ip in sorted(unknown_clients):
+        print(f"Unknown NFS client detected: ip={ip}")
+        write_event_log(
+            config,
+            "NFS_UNKNOWN_CLIENT",
+            f"ip={ip}"
+        )
+
+
+def watch_nfs_clients(config):
+    nfs_config = config.get("nfs", {})
+    check_interval = nfs_config.get("check_interval_seconds", 300)
+
+    while True:
+        check_nfs_clients(config)
+        time.sleep(check_interval)
+
 def watch_service_exposure(config):
     exposure_config = config.get("service_exposure", {})
     check_interval = exposure_config.get("check_interval_seconds", 21600)
@@ -466,6 +558,12 @@ def main():
         daemon=True
     )
 
+    nfs_thread = threading.Thread(
+        target=watch_nfs_clients,
+        args=(config,),
+        daemon=True
+    )
+
     nginx_thread = threading.Thread(
         target=watch_nginx,
         args=(config,),
@@ -482,6 +580,7 @@ def main():
     exposure_thread.start()
     nginx_thread.start()
     cleanup_thread.start()
+    nfs_thread.start()
 
     print("RPi Security Watchdog started")
 
@@ -489,6 +588,7 @@ def main():
     exposure_thread.join()
     nginx_thread.join()
     cleanup_thread.join()
+    nfs_thread.join()
 
 if __name__ == "__main__":
     main()
