@@ -7,12 +7,19 @@ import urllib.parse
 import urllib.request
 import threading
 import subprocess
+import logging
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime
 
 import yaml
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
+logger = logging.getLogger("rpi-security-watchdog")
 
 CONFIG_PATH = Path("config/config.yaml")
 
@@ -61,7 +68,7 @@ def send_telegram(bot_token, chat_id, message):
             return response.read().decode("utf-8")
 
     except Exception as error:
-        print(f"Telegram notification failed: {error}")
+        logger.info(f"Telegram notification failed: {error}")
         return None
 
 def write_event_log(config, event_type, message):
@@ -106,13 +113,13 @@ def follow_file(path):
                         break
 
                     if latest_inode != current_inode:
-                        print(f"Log rotation detected: {path}")
+                        logger.info(f"Log rotation detected: {path}")
                         break
 
                     time.sleep(0.5)
 
         except FileNotFoundError:
-            print(f"Log file not found, waiting: {path}")
+            logger.info(f"Log file not found, waiting: {path}")
             time.sleep(2)
 
 
@@ -163,7 +170,7 @@ def handle_nginx_line(line, config):
 
             count = suspicious_ips[ip]["count"]
 
-            print(
+            logger.info(
                 f"Suspicious Nginx request: "
                 f"ip={ip} count={count} "
                 f"path={path}"
@@ -191,7 +198,7 @@ def handle_nginx_line(line, config):
                     message,
                 )
 
-                print(f"Telegram alert sent for suspicious Nginx activity: ip={ip}")
+                logger.info(f"Telegram alert sent for suspicious Nginx activity: ip={ip}")
                 write_event_log(
                     config,
                     "NGINX_SCAN_ALERT",
@@ -203,7 +210,7 @@ def handle_nginx_line(line, config):
     unicode_config = nginx_config.get("unicode_detection", {})
 
     if unicode_config.get("enabled", False) and contains_unicode(path):
-        print(
+        logger.info(
             f"Interesting Unicode request: ip={ip} "
             f"method={method} path={path} status={status}"
         )
@@ -220,7 +227,7 @@ def handle_line(line, config):
         allowed_networks = config["allowed_networks"]
 
         if ip_allowed(ip, allowed_networks):
-            print(f"Allowed SSH login: user={user} ip={ip}")
+            logger.info(f"Allowed SSH login: user={user} ip={ip}")
             return
 
         hostname = config.get("hostname", "raspberrypi")
@@ -241,7 +248,7 @@ def handle_line(line, config):
             message,
         )
 
-        print(f"ALERT SSH login: user={user} ip={ip}")
+        logger.info(f"ALERT SSH login: user={user} ip={ip}")
         write_event_log(
             config,
             "SSH_LOGIN_ALERT",
@@ -258,7 +265,7 @@ def handle_line(line, config):
         if ip_allowed(ip, config["allowed_networks"]):
             return
 
-        print(f"SSH pre-auth connection: ip={ip} port={port}")
+        logger.info(f"SSH pre-auth connection: ip={ip} port={port}")
         return
 
 def check_samba_client_logs(config):
@@ -276,7 +283,7 @@ def check_samba_client_logs(config):
     allowed_networks = config["allowed_networks"]
 
     if not log_dir.exists():
-        print(f"Samba log directory not found: {log_dir}")
+        logger.info(f"Samba log directory not found: {log_dir}")
         return
 
     unknown_clients = []
@@ -301,7 +308,7 @@ def check_samba_client_logs(config):
             unknown_clients.append(suffix)
 
     if not unknown_clients:
-        print("Samba client log check: no unknown client logs found")
+        logger.info("Samba client log check: no unknown client logs found")
         return
 
     hostname = config.get("hostname", "raspberrypi")
@@ -328,7 +335,7 @@ def check_samba_client_logs(config):
     )
 
     for ip in unknown_clients:
-        print(f"Unknown Samba client log found: ip={ip}")
+        logger.info(f"Unknown Samba client log found: ip={ip}")
         write_event_log(
             config,
             "SAMBA_UNKNOWN_CLIENT_LOG",
@@ -351,7 +358,7 @@ def check_service_exposure(config):
             check=True,
         )
     except subprocess.CalledProcessError as error:
-        print(f"Service exposure check failed: {error}")
+        logger.info(f"Service exposure check failed: {error}")
         return
 
     exposed_services = {}
@@ -366,7 +373,7 @@ def check_service_exposure(config):
                 exposed_services[key] = line.strip()
 
     if not exposed_services:
-        print("Service exposure check: no risky services exposed")
+        logger.info("Service exposure check: no risky services exposed")
         return
 
     current_exposed_services = set(exposed_services.keys())
@@ -375,7 +382,7 @@ def check_service_exposure(config):
 
     with state_lock:
         if current_exposed_services == last_exposed_services:
-            print("Service exposure check: no changes")
+            logger.info("Service exposure check: no changes")
             return
 
         last_exposed_services = current_exposed_services
@@ -404,7 +411,7 @@ def check_service_exposure(config):
     )
 
     for (port, service_name), line in exposed_services.items():
-        print(f"Risky service exposed: {service_name} port={port}")
+        logger.info(f"Risky service exposed: {service_name} port={port}")
         write_event_log(
             config,
             "SERVICE_EXPOSURE",
@@ -432,7 +439,7 @@ def cleanup_tracked_ips(config):
 
         with state_lock:
             if removed_ips:
-                print(f"Cleaned up tracked IPs: count={len(removed_ips)}")
+                logger.info(f"Cleaned up tracked IPs: count={len(removed_ips)}")
 
         time.sleep(cleanup_interval)
 
@@ -453,7 +460,7 @@ def check_nfs_clients(config):
             check=True,
         )
     except subprocess.CalledProcessError as error:
-        print(f"NFS client check failed: {error}")
+        logger.info(f"NFS client check failed: {error}")
         return
 
     allowed_networks = config["allowed_networks"]
@@ -483,7 +490,7 @@ def check_nfs_clients(config):
             unknown_clients.add(peer_ip)
 
     if seen_clients:
-        print(f"NFS clients seen: {', '.join(sorted(seen_clients))}")
+        logger.info(f"NFS clients seen: {', '.join(sorted(seen_clients))}")
 
     if not unknown_clients:
         return
@@ -512,7 +519,7 @@ def check_nfs_clients(config):
     )
 
     for ip in sorted(unknown_clients):
-        print(f"Unknown NFS client detected: ip={ip}")
+        logger.info(f"Unknown NFS client detected: ip={ip}")
         write_event_log(
             config,
             "NFS_UNKNOWN_CLIENT",
@@ -539,7 +546,7 @@ def watch_service_exposure(config):
 def watch_ssh(config):
     auth_log = config["logs"]["auth_log"]
 
-    print(f"Watching SSH log: {auth_log}")
+    logger.info(f"Watching SSH log: {auth_log}")
 
     for line in follow_file(auth_log):
         handle_line(line, config)
@@ -548,7 +555,7 @@ def watch_ssh(config):
 def watch_nginx(config):
     nginx_access_log = config["logs"]["nginx_access_log"]
 
-    print(f"Watching Nginx access log: {nginx_access_log}")
+    logger.info(f"Watching Nginx access log: {nginx_access_log}")
 
     for line in follow_file(nginx_access_log):
         handle_nginx_line(line, config)
@@ -619,7 +626,7 @@ def main():
     cleanup_thread.start()
     nfs_thread.start()
 
-    print("RPi Security Watchdog started")
+    logger.info("RPi Security Watchdog started")
 
     ssh_thread.join()
     exposure_thread.join()
