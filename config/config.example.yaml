@@ -57,3 +57,5 @@ nginx:
 
   alert_threshold: 10
   cooldown_minutes: 30
+  cleanup_interval_seconds: 300
+  tracked_ip_ttl_minutes: 60

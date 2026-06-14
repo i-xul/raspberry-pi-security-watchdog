@@ -31,6 +31,8 @@ suspicious_ips = defaultdict(
     lambda: {
         "count": 0,
         "paths": set(),
+        "first_seen": time.time(),
+        "last_seen": time.time(),
     }
 )
 
@@ -124,6 +126,7 @@ def handle_nginx_line(line, config):
         if pattern.lower() in path.lower():
             suspicious_ips[ip]["count"] += 1
             suspicious_ips[ip]["paths"].add(path)
+            suspicious_ips[ip]["last_seen"] = time.time()
 
             count = suspicious_ips[ip]["count"]
 
@@ -225,6 +228,28 @@ def handle_line(line, config):
         print(f"SSH pre-auth connection: ip={ip} port={port}")
         return
 
+def cleanup_tracked_ips(config):
+    nginx_config = config.get("nginx", {})
+    cleanup_interval = nginx_config.get("cleanup_interval_seconds", 300)
+    ttl_seconds = nginx_config.get("tracked_ip_ttl_minutes", 60) * 60
+
+    while True:
+        now = time.time()
+        removed_ips = []
+
+        for ip, data in list(suspicious_ips.items()):
+            if now - data["last_seen"] > ttl_seconds:
+                removed_ips.append(ip)
+                del suspicious_ips[ip]
+
+        for ip in removed_ips:
+            last_alert_times.pop(ip, None)
+
+        if removed_ips:
+            print(f"Cleaned up tracked IPs: count={len(removed_ips)}")
+
+        time.sleep(cleanup_interval)
+
 def watch_ssh(config):
     auth_log = config["logs"]["auth_log"]
 
@@ -257,13 +282,21 @@ def main():
         daemon=True
     )
 
+    cleanup_thread = threading.Thread(
+        target=cleanup_tracked_ips,
+        args=(config,),
+        daemon=True
+    )
+
     ssh_thread.start()
     nginx_thread.start()
+    cleanup_thread.start()
 
     print("RPi Security Watchdog started")
 
     ssh_thread.join()
     nginx_thread.join()
+    cleanup_thread.join()
 
 if __name__ == "__main__":
     main()
