@@ -39,6 +39,8 @@ suspicious_ips = defaultdict(
 
 last_alert_times = {}
 
+last_exposed_services = set()
+
 state_lock = threading.RLock()
 
 def load_config():
@@ -366,6 +368,17 @@ def check_service_exposure(config):
     if not exposed_services:
         print("Service exposure check: no risky services exposed")
         return
+
+    current_exposed_services = set(exposed_services.keys())
+
+    global last_exposed_services
+
+    with state_lock:
+        if current_exposed_services == last_exposed_services:
+            print("Service exposure check: no changes")
+            return
+
+        last_exposed_services = current_exposed_services
 
     hostname = config.get("hostname", "raspberrypi")
     telegram = config["telegram"]
