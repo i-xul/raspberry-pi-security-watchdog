@@ -1,0 +1,16 @@
+[Unit]
+Description=Raspberry Pi Security Watchdog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hmasi/raspberry-pi-security-watchdog
+ExecStart=/usr/bin/python3 /home/hmasi/raspberry-pi-security-watchdog/watchdog/security_watchdog.py
+Restart=always
+RestartSec=10
+User=hmasi
+Group=hmasi
+
+[Install]
+WantedBy=multi-user.target
