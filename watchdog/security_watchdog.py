@@ -540,8 +540,32 @@ def watch_nginx(config):
     for line in follow_file(nginx_access_log):
         handle_nginx_line(line, config)
 
+def send_startup_notification(config):
+    hostname = config.get("hostname", "raspberrypi")
+    telegram = config["telegram"]
+
+    message = (
+        "🟢 RPi Security Watchdog started\n\n"
+        f"Host: {hostname}\n"
+        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+    send_telegram(
+        telegram["bot_token"],
+        telegram["chat_id"],
+        message,
+    )
+
+    write_event_log(
+        config,
+        "WATCHDOG_STARTUP",
+        f"host={hostname}"
+    )
+
 def main():
     config = load_config()
+
+    send_startup_notification(config)
 
    # check_service_exposure(config)
     check_samba_client_logs(config)
