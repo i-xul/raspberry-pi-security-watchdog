@@ -322,7 +322,7 @@ def check_service_exposure(config):
         print(f"Service exposure check failed: {error}")
         return
 
-    exposed_services = []
+    exposed_services = {}
 
     for line in result.stdout.splitlines():
         for port, service_name in risky_ports.items():
@@ -330,7 +330,8 @@ def check_service_exposure(config):
                 if "127.0.0.1" in line or "[::1]" in line:
                     continue
 
-                exposed_services.append((port, service_name, line.strip()))
+                key = (port, service_name)
+                exposed_services[key] = line.strip()
 
     if not exposed_services:
         print("Service exposure check: no risky services exposed")
@@ -348,7 +349,7 @@ def check_service_exposure(config):
         "",
     ]
 
-    for port, service_name, _line in exposed_services:
+    for port, service_name in exposed_services.keys():
         message_lines.append(f"- {service_name} on port {port}")
 
     message = "\n".join(message_lines)
@@ -359,7 +360,7 @@ def check_service_exposure(config):
         message,
     )
 
-    for port, service_name, line in exposed_services:
+    for (port, service_name), line in exposed_services.items():
         print(f"Risky service exposed: {service_name} port={port}")
         write_event_log(
             config,
