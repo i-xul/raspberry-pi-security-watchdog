@@ -72,6 +72,25 @@ def send_telegram(bot_token, chat_id, message):
         logger.info(f"Telegram notification failed: {error}")
         return None
 
+def get_telegram_updates(bot_token, offset=None, timeout=30):
+    url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
+
+    params = {
+        "timeout": timeout,
+    }
+
+    if offset is not None:
+        params["offset"] = offset
+
+    query = urllib.parse.urlencode(params)
+
+    try:
+        with urllib.request.urlopen(f"{url}?{query}", timeout=timeout + 5) as response:
+            return yaml.safe_load(response.read().decode("utf-8"))
+    except Exception as error:
+        logger.error(f"Telegram update fetch failed: {error}")
+        return None
+
 def write_event_log(config, event_type, message):
     log_path = Path(config["logs"].get("watchdog_log", "logs/security_watchdog.log"))
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -638,6 +657,23 @@ def get_top_attacker_ips(config, limit=10):
 
     return results
 
+def build_top_ips_message(config, limit=10):
+    results = get_top_attacker_ips(config, limit)
+
+    if not results:
+        return "No attacker IP statistics available yet."
+
+    lines = [
+        "📊 Top attacker IPs",
+        "",
+    ]
+
+    for index, item in enumerate(results, start=1):
+        lines.append(
+            f"{index}. {item['ip']} — alerts={item['alerts']} requests={item['requests']}"
+        )
+
+    return "\n".join(lines)
 
 def print_top_attacker_ips(config, limit=10):
     results = get_top_attacker_ips(config, limit)
@@ -652,6 +688,46 @@ def print_top_attacker_ips(config, limit=10):
         logger.info(
             f"{item['ip']} alerts={item['alerts']} requests={item['requests']}"
         )
+
+def watch_telegram_commands(config):
+    telegram = config["telegram"]
+    bot_token = telegram["bot_token"]
+    allowed_chat_id = str(telegram["chat_id"])
+
+    offset = None
+
+    logger.info("Watching Telegram commands")
+
+    while True:
+        updates = get_telegram_updates(bot_token, offset=offset, timeout=30)
+
+        if not updates or not updates.get("ok"):
+            time.sleep(5)
+            continue
+
+        for update in updates.get("result", []):
+            offset = update["update_id"] + 1
+
+            message = update.get("message", {})
+            chat = message.get("chat", {})
+            text = message.get("text", "")
+            chat_id = str(chat.get("id", ""))
+
+            if chat_id != allowed_chat_id:
+                logger.warning(f"Ignoring Telegram command from unauthorized chat_id={chat_id}")
+                continue
+
+            if text == "/top_ips":
+                reply = build_top_ips_message(config)
+                send_telegram(bot_token, chat_id, reply)
+
+            elif text == "/help":
+                reply = (
+                    "RPi Security Watchdog commands:\n\n"
+                    "/top_ips - show top attacker IPs\n"
+                    "/help - show this help message"
+                )
+                send_telegram(bot_token, chat_id, reply)
 
 def main():
     config = load_config()
@@ -691,11 +767,18 @@ def main():
         daemon=True
     )
 
+    telegram_thread = threading.Thread(
+        target=watch_telegram_commands,
+        args=(config,),
+        daemon=True
+    )
+
     ssh_thread.start()
     exposure_thread.start()
     nginx_thread.start()
     cleanup_thread.start()
     nfs_thread.start()
+    telegram_thread.start()
 
     logger.info("RPi Security Watchdog started")
 
@@ -704,6 +787,7 @@ def main():
     nginx_thread.join()
     cleanup_thread.join()
     nfs_thread.join()
+    telegram_thread.join()
 
 if __name__ == "__main__":
     main()
