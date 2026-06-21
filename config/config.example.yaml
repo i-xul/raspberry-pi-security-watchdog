@@ -19,6 +19,11 @@ nfs:
   check_interval_seconds: 300
   alert_on_unknown_clients: true
 
+geoip:
+  enabled: true
+  cache_file: "logs/geoip_cache.json"
+  timeout_seconds: 5
+
 logs:
   auth_log: "/var/log/auth.log"
   nginx_access_log: "/var/log/nginx/access.log"

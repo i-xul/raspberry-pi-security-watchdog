@@ -9,6 +9,7 @@ import threading
 import subprocess
 import logging
 import gzip
+import json
 from collections import defaultdict, Counter
 from pathlib import Path
 from datetime import datetime
@@ -621,6 +622,80 @@ def read_watchdog_log_lines(config):
         except FileNotFoundError:
             continue
 
+def country_code_to_flag(country_code):
+    if not country_code or len(country_code) != 2:
+        return ""
+
+    return "".join(
+        chr(127397 + ord(char.upper()))
+        for char in country_code
+    )
+
+
+def load_geoip_cache(config):
+    cache_path = Path(config.get("geoip", {}).get("cache_file", "logs/geoip_cache.json"))
+
+    if not cache_path.exists():
+        return {}
+
+    try:
+        with cache_path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as error:
+        logger.error(f"Failed to load GeoIP cache: {error}")
+        return {}
+
+
+def save_geoip_cache(config, cache):
+    cache_path = Path(config.get("geoip", {}).get("cache_file", "logs/geoip_cache.json"))
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with cache_path.open("w", encoding="utf-8") as f:
+            json.dump(cache, f, indent=2, sort_keys=True)
+    except Exception as error:
+        logger.error(f"Failed to save GeoIP cache: {error}")
+
+
+def lookup_geoip(config, ip):
+    geoip_config = config.get("geoip", {})
+
+    if not geoip_config.get("enabled", False):
+        return None
+
+    if ip_allowed(ip, config["allowed_networks"]):
+        return None
+
+    cache = load_geoip_cache(config)
+
+    if ip in cache:
+        return cache[ip]
+
+    timeout = geoip_config.get("timeout_seconds", 5)
+    url = f"http://ip-api.com/json/{ip}?fields=status,country,countryCode,query"
+
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+
+    except Exception as error:
+        logger.error(f"GeoIP lookup failed for ip={ip}: {error}")
+        return None
+
+    if data.get("status") != "success":
+        logger.warning(f"GeoIP lookup returned non-success for ip={ip}: {data}")
+        return None
+
+    geoip_result = {
+        "country": data.get("country", "Unknown"),
+        "country_code": data.get("countryCode", ""),
+        "flag": country_code_to_flag(data.get("countryCode", "")),
+    }
+
+    cache[ip] = geoip_result
+    save_geoip_cache(config, cache)
+
+    return geoip_result
 
 def get_top_attacker_ips(config, limit=10):
     alert_counts = Counter()
