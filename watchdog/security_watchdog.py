@@ -799,6 +799,89 @@ def build_recent_events_message(config, limit=10):
 
     return "\n".join(lines)
 
+def get_ip_scan_summary(config, target_ip, example_limit=10):
+    alerts = 0
+    requests_total = 0
+    examples = []
+
+    for line in read_watchdog_log_lines(config):
+        if "[NGINX_SCAN_ALERT]" not in line:
+            continue
+
+        ip_match = re.search(r"ip=([0-9.]+)", line)
+
+        if not ip_match:
+            continue
+
+        ip = ip_match.group(1)
+
+        if ip != target_ip:
+            continue
+
+        requests_match = re.search(r"requests=(\d+)", line)
+        examples_match = re.search(r"examples=(.+)$", line)
+
+        alerts += 1
+        requests_total += int(requests_match.group(1)) if requests_match else 0
+
+        if examples_match:
+            for example in examples_match.group(1).split(","):
+                example = example.strip()
+                if example and example not in examples:
+                    examples.append(example)
+
+    return {
+        "ip": target_ip,
+        "alerts": alerts,
+        "requests": requests_total,
+        "examples": examples[:example_limit],
+    }
+
+
+def build_ip_investigation_message(config, target_ip):
+    try:
+        ipaddress.ip_address(target_ip)
+    except ValueError:
+        return "Invalid IP address."
+
+    summary = get_ip_scan_summary(config, target_ip)
+    geoip = lookup_geoip(config, target_ip)
+
+    ip_display = target_ip
+    country_line = "Country: unknown"
+
+    if geoip:
+        if geoip.get("flag"):
+            ip_display = f"{target_ip} {geoip['flag']}"
+
+        if geoip.get("country"):
+            country_line = f"Country: {geoip['country']}"
+
+    if summary["alerts"] == 0:
+        return (
+            "🔎 IP investigation\n\n"
+            f"IP: {ip_display}\n"
+            f"{country_line}\n\n"
+            "No scan alerts found for this IP."
+        )
+
+    lines = [
+        "🔎 IP investigation",
+        "",
+        f"IP: {ip_display}",
+        country_line,
+        "",
+        f"Alerts: {summary['alerts']}",
+        f"Requests: {summary['requests']}",
+        "",
+        "Recent examples:",
+    ]
+
+    for example in summary["examples"]:
+        lines.append(f"- {example}")
+
+    return "\n".join(lines)
+
 def print_top_attacker_ips(config, limit=10):
     results = get_top_attacker_ips(config, limit)
 
@@ -849,11 +932,18 @@ def watch_telegram_commands(config):
                 reply = build_recent_events_message(config)
                 send_telegram(bot_token, chat_id, reply)
 
+            elif text.startswith("/ip "):
+                parts = text.split(maxsplit=1)
+                target_ip = parts[1].strip()
+                reply = build_ip_investigation_message(config, target_ip)
+                send_telegram(bot_token, chat_id, reply)
+
             elif text == "/help":
                 reply = (
                     "RPi Security Watchdog commands:\n\n"
                     "/top_ips - show top attacker IPs\n"
                     "/recent - show recent events\n"
+                    "/ip <address> - investigate one IP\n"
                     "/help - show this help message"
                 )
                 send_telegram(bot_token, chat_id, reply)
