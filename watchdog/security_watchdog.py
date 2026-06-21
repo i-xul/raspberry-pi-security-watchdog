@@ -16,12 +16,20 @@ from datetime import datetime
 
 import yaml
 
+# =============================================================================
+# Logging setup
+# =============================================================================
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
 logger = logging.getLogger("rpi-security-watchdog")
+
+# =============================================================================
+# Configuration paths and log parsing patterns
+# =============================================================================
 
 CONFIG_PATH = Path("config/config.yaml")
 
@@ -36,6 +44,13 @@ SSH_PREAUTH_RE = re.compile(
 NGINX_ACCESS_RE = re.compile(
     r'(?P<ip>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>[^"]+)" (?P<status>\d+)'
 )
+
+# =============================================================================
+# Runtime state
+# =============================================================================
+# These structures track suspicious activity in memory while the daemon is
+# running. Access to shared state is protected with state_lock because several
+# watcher threads run at the same time.
 
 suspicious_ips = defaultdict(
     lambda: {
@@ -56,8 +71,18 @@ def load_config():
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
+# =============================================================================
+# Telegram integration
+# =============================================================================
 
 def send_telegram(bot_token, chat_id, message):
+    """
+    Send a plain text Telegram message.
+
+    Errors are logged and swallowed so that notification failures do not crash
+    the watchdog daemon.
+    """
+
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
     data = urllib.parse.urlencode({
@@ -93,6 +118,9 @@ def get_telegram_updates(bot_token, offset=None, timeout=30):
         return None
 
 def build_stats_message(config):
+    """
+    Build a high-level Telegram summary of scan activity.
+    """
     top_ips = get_top_attacker_ips(config, limit=1)
     top_scans = get_top_scan_targets(config, limit=1)
 
@@ -187,7 +215,14 @@ def build_geoip_summary_message(config, limit=10):
 
     return "\n".join(lines)
 
+# =============================================================================
+# Persistent event logging and log file following
+# =============================================================================
+
 def write_event_log(config, event_type, message):
+    """
+    Append a structured watchdog event to the persistent event log.
+    """
     log_path = Path(config["logs"].get("watchdog_log", "logs/security_watchdog.log"))
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -207,6 +242,9 @@ def ip_allowed(ip, allowed_networks):
 
 
 def follow_file(path):
+    """
+    Append a structured watchdog event to the persistent event log.
+    """
     path = Path(path)
 
     while True:
@@ -238,6 +276,9 @@ def follow_file(path):
             logger.info(f"Log file not found, waiting: {path}")
             time.sleep(2)
 
+# =============================================================================
+# Nginx scan detection
+# =============================================================================
 
 def contains_unicode(value):
     return any(ord(char) > 127 for char in value)
@@ -262,6 +303,10 @@ def should_send_alert(ip, cooldown_minutes):
     return False
 
 def handle_nginx_line(line, config):
+    """
+    Parse one Nginx access log line, track suspicious paths per source IP,
+    and send an alert when the configured threshold is reached.
+    """
     match = NGINX_ACCESS_RE.search(line)
 
     if not match:
@@ -349,7 +394,15 @@ def handle_nginx_line(line, config):
             f"method={method} path={path} status={status}"
         )
 
+# =============================================================================
+# SSH monitoring
+# =============================================================================
+
 def handle_line(line, config):
+    """
+    Parse one auth.log line and alert when a successful SSH login comes from
+    outside the configured allowed networks.
+    """
     accepted_match = SSH_ACCEPTED_RE.search(line)
 
     if accepted_match:
@@ -401,6 +454,10 @@ def handle_line(line, config):
 
         logger.info(f"SSH pre-auth connection: ip={ip} port={port}")
         return
+
+# =============================================================================
+# Samba monitoring
+# =============================================================================
 
 def check_samba_client_logs(config):
     samba_config = config.get("samba", {})
@@ -475,6 +532,10 @@ def check_samba_client_logs(config):
             "SAMBA_UNKNOWN_CLIENT_LOG",
             f"ip={ip}"
         )
+
+# =============================================================================
+# Service exposure monitoring
+# =============================================================================
 
 def check_service_exposure(config):
     exposure_config = config.get("service_exposure", {})
@@ -576,6 +637,10 @@ def cleanup_tracked_ips(config):
                 logger.info(f"Cleaned up tracked IPs: count={len(removed_ips)}")
 
         time.sleep(cleanup_interval)
+
+# =============================================================================
+# NFS client monitoring
+# =============================================================================
 
 def check_nfs_clients(config):
     nfs_config = config.get("nfs", {})
@@ -735,6 +800,10 @@ def read_watchdog_log_lines(config):
         except FileNotFoundError:
             continue
 
+# =============================================================================
+# GeoIP enrichment
+# =============================================================================
+
 def country_code_to_flag(country_code):
     if not country_code or len(country_code) != 2:
         return ""
@@ -771,6 +840,10 @@ def save_geoip_cache(config, cache):
 
 
 def lookup_geoip(config, ip):
+    """
+    Resolve an IP address to country information and cache the result locally
+    to avoid repeated external API lookups.
+    """
     geoip_config = config.get("geoip", {})
 
     if not geoip_config.get("enabled", False):
@@ -810,7 +883,17 @@ def lookup_geoip(config, ip):
 
     return geoip_result
 
+# =============================================================================
+# Fail2ban correlation
+# =============================================================================
+
 def get_fail2ban_status(ip):
+    """
+    Check whether an IP address is currently banned by any Fail2ban jail.
+
+    The daemon uses sudo -n with a narrow sudoers rule so this check fails
+    safely instead of waiting for a password.
+    """
     try:
         result = subprocess.run(
             ["sudo", "-n", "fail2ban-client", "status"],
@@ -848,7 +931,14 @@ def get_fail2ban_status(ip):
 
     return None
 
+# =============================================================================
+# Statistics and Telegram report builders
+# =============================================================================
+
 def get_top_attacker_ips(config, limit=10):
+    """
+    Build attacker statistics from persisted watchdog logs.
+    """
     alert_counts = Counter()
     request_counts = Counter()
 
@@ -1089,7 +1179,15 @@ def print_top_attacker_ips(config, limit=10):
             f"{item['ip']} alerts={item['alerts']} requests={item['requests']}"
         )
 
+# =============================================================================
+# Telegram command polling
+# =============================================================================
+
 def watch_telegram_commands(config):
+    """
+    Poll Telegram for commands from the configured chat and dispatch them to
+    the appropriate report builder.
+    """
     telegram = config["telegram"]
     bot_token = telegram["bot_token"]
     allowed_chat_id = str(telegram["chat_id"])
@@ -1156,7 +1254,14 @@ def watch_telegram_commands(config):
                 )
                 send_telegram(bot_token, chat_id, reply)
 
+# =============================================================================
+# Main daemon entry point
+# =============================================================================
+
 def main():
+    """
+    Load configuration, run startup checks, and start all monitoring threads.
+    """
     config = load_config()
 
     send_startup_notification(config)
