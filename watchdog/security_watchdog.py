@@ -204,11 +204,17 @@ def handle_nginx_line(line, config):
                 example_paths = list(suspicious_ips[ip]["paths"])[:5]
                 examples = "\n".join(f"- {example}" for example in example_paths)
 
+                geoip = lookup_geoip(config, ip)
+                ip_display = ip
+
+                if geoip and geoip.get("flag"):
+                    ip_display = f"{ip} {geoip['flag']}"
+
                 message = (
                     "⚠️ RPi Security Watchdog\n\n"
                     "Suspicious web scan detected\n\n"
                     f"Host: {hostname}\n"
-                    f"IP: {ip}\n"
+                    f"IP: {ip_display}\n"
                     f"Requests: {count}\n\n"
                     f"Examples:\n{examples}"
                 )
