@@ -738,6 +738,36 @@ def get_top_attacker_ips(config, limit=10):
 
     return results
 
+def get_top_scan_targets(config, limit=10):
+    target_counts = Counter()
+
+    for line in read_watchdog_log_lines(config):
+        if "[NGINX_SCAN_ALERT]" not in line:
+            continue
+
+        examples_match = re.search(r"examples=(.+)$", line)
+
+        if not examples_match:
+            continue
+
+        for target in examples_match.group(1).split(","):
+            target = target.strip()
+
+            if not target:
+                continue
+
+            target_counts[target] += 1
+
+    results = []
+
+    for target, count in target_counts.most_common(limit):
+        results.append({
+            "target": target,
+            "count": count,
+        })
+
+    return results
+
 def build_top_ips_message(config, limit=10):
     results = get_top_attacker_ips(config, limit)
 
@@ -752,6 +782,24 @@ def build_top_ips_message(config, limit=10):
     for index, item in enumerate(results, start=1):
         lines.append(
             f"{index}. {item['ip']} — alerts={item['alerts']} requests={item['requests']}"
+        )
+
+    return "\n".join(lines)
+
+def build_top_scans_message(config, limit=10):
+    results = get_top_scan_targets(config, limit)
+
+    if not results:
+        return "No scan target statistics available yet."
+
+    lines = [
+        "🎯 Top scan targets",
+        "",
+    ]
+
+    for index, item in enumerate(results, start=1):
+        lines.append(
+            f"{index}. {item['target']} — {item['count']} hits"
         )
 
     return "\n".join(lines)
@@ -938,12 +986,17 @@ def watch_telegram_commands(config):
                 reply = build_ip_investigation_message(config, target_ip)
                 send_telegram(bot_token, chat_id, reply)
 
+            elif text == "/top_scans":
+                reply = build_top_scans_message(config)
+                send_telegram(bot_token, chat_id, reply)
+
             elif text == "/help":
                 reply = (
                     "RPi Security Watchdog commands:\n\n"
                     "/top_ips - show top attacker IPs\n"
                     "/recent - show recent events\n"
                     "/ip <address> - investigate one IP\n"
+                    "/top_scans - show most common scan targets\n"
                     "/help - show this help message"
                 )
                 send_telegram(bot_token, chat_id, reply)
