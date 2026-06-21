@@ -210,12 +210,24 @@ def handle_nginx_line(line, config):
                 if geoip and geoip.get("flag"):
                     ip_display = f"{ip} {geoip['flag']}"
 
+                fail2ban_jail = get_fail2ban_status(ip)
+
+                fail2ban_text = ""
+
+                if fail2ban_jail:
+                    fail2ban_text = (
+                        "\n"
+                        "Fail2ban: banned\n"
+                        f"Jail: {fail2ban_jail}\n"
+                    )
+
                 message = (
                     "⚠️ RPi Security Watchdog\n\n"
                     "Suspicious web scan detected\n\n"
                     f"Host: {hostname}\n"
                     f"IP: {ip_display}\n"
                     f"Requests: {count}\n\n"
+                    f"{fail2ban_text}\n"
                     f"Examples:\n{examples}"
                 )
 
@@ -702,6 +714,44 @@ def lookup_geoip(config, ip):
     save_geoip_cache(config, cache)
 
     return geoip_result
+
+def get_fail2ban_status(ip):
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "fail2ban-client", "status"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except Exception:
+        return None
+
+    jail_match = re.search(r"Jail list:\s*(.+)", result.stdout)
+
+    if not jail_match:
+        return None
+
+    jails = [
+        jail.strip()
+        for jail in jail_match.group(1).split(",")
+    ]
+
+    for jail in jails:
+        try:
+            jail_status = subprocess.run(
+                ["sudo", "-n", "fail2ban-client", "status", jail],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            if ip in jail_status.stdout:
+                return jail
+
+        except Exception:
+            continue
+
+    return None
 
 def get_top_attacker_ips(config, limit=10):
     alert_counts = Counter()
