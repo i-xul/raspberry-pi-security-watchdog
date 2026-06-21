@@ -150,6 +150,43 @@ def build_stats_message(config):
 
     return "\n".join(message_lines)
 
+def build_geoip_summary_message(config, limit=10):
+    country_counts = Counter()
+
+    for line in read_watchdog_log_lines(config):
+        if "[NGINX_SCAN_ALERT]" not in line:
+            continue
+
+        ip_match = re.search(r"ip=([0-9.]+)", line)
+
+        if not ip_match:
+            continue
+
+        ip = ip_match.group(1)
+        geoip = lookup_geoip(config, ip)
+
+        if not geoip:
+            continue
+
+        country = geoip.get("country", "Unknown")
+        flag = geoip.get("flag", "")
+
+        label = f"{flag} {country}".strip()
+        country_counts[label] += 1
+
+    if not country_counts:
+        return "No GeoIP country statistics available yet."
+
+    lines = [
+        "🌍 GeoIP country summary",
+        "",
+    ]
+
+    for country, count in country_counts.most_common(limit):
+        lines.append(f"{country} — {count} alerts")
+
+    return "\n".join(lines)
+
 def write_event_log(config, event_type, message):
     log_path = Path(config["logs"].get("watchdog_log", "logs/security_watchdog.log"))
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1102,6 +1139,10 @@ def watch_telegram_commands(config):
                 reply = build_stats_message(config)
                 send_telegram(bot_token, chat_id, reply)
 
+            elif text == "/geoip":
+                reply = build_geoip_summary_message(config)
+                send_telegram(bot_token, chat_id, reply)
+
             elif text == "/help":
                 reply = (
                     "RPi Security Watchdog commands:\n\n"
@@ -1110,6 +1151,7 @@ def watch_telegram_commands(config):
                     "/ip <address> - investigate one IP\n"
                     "/top_scans - show most common scan targets\n"
                     "/stats - show overall scan statistics\n"
+                    "/geoip - show attacker country summary\n"
                     "/help - show this help message"
                 )
                 send_telegram(bot_token, chat_id, reply)
