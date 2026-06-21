@@ -8,8 +8,9 @@ import urllib.request
 import threading
 import subprocess
 import logging
+import gzip
+from collections import defaultdict, Counter
 from pathlib import Path
-from collections import defaultdict
 from datetime import datetime
 
 import yaml
@@ -582,12 +583,82 @@ def send_startup_notification(config):
         f"host={hostname}"
     )
 
+def read_watchdog_log_lines(config):
+    log_path = Path(config["logs"].get("watchdog_log", "logs/security_watchdog.log"))
+    log_files = sorted(log_path.parent.glob(f"{log_path.name}*"))
+
+    for path in log_files:
+        if path.suffix == ".gz":
+            opener = gzip.open
+            mode = "rt"
+        else:
+            opener = open
+            mode = "r"
+
+        try:
+            with opener(path, mode, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    yield line.rstrip("\n")
+        except FileNotFoundError:
+            continue
+
+
+def get_top_attacker_ips(config, limit=10):
+    alert_counts = Counter()
+    request_counts = Counter()
+
+    for line in read_watchdog_log_lines(config):
+        if "[NGINX_SCAN_ALERT]" not in line:
+            continue
+
+        ip_match = re.search(r"ip=([0-9.]+)", line)
+        requests_match = re.search(r"requests=(\d+)", line)
+
+        if not ip_match:
+            continue
+
+        ip = ip_match.group(1)
+
+        if ip_allowed(ip, config["allowed_networks"]):
+            continue
+
+        requests = int(requests_match.group(1)) if requests_match else 0
+
+        alert_counts[ip] += 1
+        request_counts[ip] += requests
+
+    results = []
+
+    for ip, alerts in alert_counts.most_common(limit):
+        results.append({
+            "ip": ip,
+            "alerts": alerts,
+            "requests": request_counts[ip],
+        })
+
+    return results
+
+
+def print_top_attacker_ips(config, limit=10):
+    results = get_top_attacker_ips(config, limit)
+
+    if not results:
+        logger.info("No attacker IP statistics available")
+        return
+
+    logger.info("Top attacker IPs:")
+
+    for item in results:
+        logger.info(
+            f"{item['ip']} alerts={item['alerts']} requests={item['requests']}"
+        )
+
 def main():
     config = load_config()
 
     send_startup_notification(config)
 
-   # check_service_exposure(config)
+    # check_service_exposure(config)
     check_samba_client_logs(config)
 
     ssh_thread = threading.Thread(
