@@ -675,6 +675,49 @@ def build_top_ips_message(config, limit=10):
 
     return "\n".join(lines)
 
+def build_recent_events_message(config, limit=10):
+    events = []
+
+    for line in read_watchdog_log_lines(config):
+        if "[NGINX_SCAN_ALERT]" in line:
+            event_type = "NGINX"
+
+        elif "[SSH_LOGIN_ALERT]" in line:
+            event_type = "SSH"
+
+        elif "[SAMBA_UNKNOWN_CLIENT_LOG]" in line:
+            event_type = "SAMBA"
+
+        elif "[NFS_UNKNOWN_CLIENT]" in line:
+            event_type = "NFS"
+
+        else:
+            continue
+
+        events.append((event_type, line))
+
+    if not events:
+        return "No recent watchdog events found."
+
+    events = events[-limit:]
+
+    lines = [
+        "📋 Recent watchdog events",
+        "",
+    ]
+
+    for event_type, line in reversed(events):
+        timestamp = line.split(" ")[0]
+
+        if "ip=" in line:
+            ip_match = re.search(r"ip=([0-9.]+)", line)
+            ip = ip_match.group(1) if ip_match else "unknown"
+            lines.append(f"{timestamp} {event_type} {ip}")
+        else:
+            lines.append(f"{timestamp} {event_type}")
+
+    return "\n".join(lines)
+
 def print_top_attacker_ips(config, limit=10):
     results = get_top_attacker_ips(config, limit)
 
@@ -720,11 +763,16 @@ def watch_telegram_commands(config):
             if text == "/top_ips":
                 reply = build_top_ips_message(config)
                 send_telegram(bot_token, chat_id, reply)
+            
+            elif text == "/recent":
+                reply = build_recent_events_message(config)
+                send_telegram(bot_token, chat_id, reply)
 
             elif text == "/help":
                 reply = (
                     "RPi Security Watchdog commands:\n\n"
                     "/top_ips - show top attacker IPs\n"
+                    "/recent - show recent events\n"
                     "/help - show this help message"
                 )
                 send_telegram(bot_token, chat_id, reply)
