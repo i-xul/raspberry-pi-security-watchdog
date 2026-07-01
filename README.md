@@ -104,6 +104,35 @@ Start manually:
 python3 watchdog/security_watchdog.py
 ```
 
+## Sudo Configuration
+
+The watchdog integrates with Fail2ban to enrich Telegram alerts with the
+corresponding jail name.
+
+To allow the watchdog to query Fail2ban without running the entire service
+as root, grant passwordless access to the required command:
+
+```bash
+sudo visudo
+```
+
+Add the following line:
+
+```text
+hmasi ALL=(root) NOPASSWD: /usr/bin/fail2ban-client
+```
+
+Replace `hmasi` with the user account running the watchdog service.
+
+This allows the watchdog to execute:
+
+```bash
+sudo -n fail2ban-client status
+sudo -n fail2ban-client status <jail>
+```
+
+without prompting for a password.
+
 ## Systemd Service
 
 Install service:
