@@ -132,7 +132,7 @@ def get_telegram_updates(bot_token, offset=None, timeout=30):
 
     try:
         with urllib.request.urlopen(f"{url}?{query}", timeout=timeout + 5) as response:
-            return yaml.safe_load(response.read().decode("utf-8"))
+            return json.loads(response.read().decode("utf-8"))
     except Exception as error:
         logger.error(f"Telegram update fetch failed: {error}")
         return None
