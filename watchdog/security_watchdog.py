@@ -1,4 +1,24 @@
 #!/usr/bin/env python3
+#
+# ----------------------------------------------------------------------
+# Raspberry Pi Security Watchdog
+# ----------------------------------------------------------------------
+#
+# Author: H A (i-xul)
+# Repository: https://github.com/i-xul/raspberry-pi-security-watchdog
+#
+# Created: 2026-06-14
+# Version: v1.0.0
+#
+# Description:
+# Monitors Raspberry Pi security-relevant logs and services, sends
+# Telegram alerts, enriches suspicious activity with GeoIP and Fail2ban
+# data, and provides Telegram-based investigation commands.
+#
+# Version history:
+# v1.0.0 - Initial stable monitoring release
+#
+# ----------------------------------------------------------------------
 
 import ipaddress
 import re
