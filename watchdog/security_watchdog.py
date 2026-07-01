@@ -872,7 +872,8 @@ def lookup_geoip(config, ip):
     if ip_allowed(ip, config["allowed_networks"]):
         return None
 
-    cache = load_geoip_cache(config)
+    with state_lock:
+        cache = load_geoip_cache(config)
 
     if ip in cache:
         return cache[ip]
@@ -898,8 +899,9 @@ def lookup_geoip(config, ip):
         "flag": country_code_to_flag(data.get("countryCode", "")),
     }
 
-    cache[ip] = geoip_result
-    save_geoip_cache(config, cache)
+    with state_lock:
+        cache[ip] = geoip_result
+        save_geoip_cache(config, cache)
 
     return geoip_result
 
