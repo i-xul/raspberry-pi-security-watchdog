@@ -57,7 +57,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from database.database import insert_scan_event, get_scan_stats
+from database.database import (
+    insert_scan_event,
+    get_scan_stats,
+    get_top_attacker_ips as db_get_top_attacker_ips,
+)
 
 CONFIG_PATH = Path("config/config.yaml")
 
@@ -948,7 +952,7 @@ def get_fail2ban_status(ip):
 # Statistics and Telegram report builders
 # =============================================================================
 
-def get_top_attacker_ips(config, limit=10):
+def get_top_attacker_ips_from_logs(config, limit=10):
     """
     Build attacker statistics from persisted watchdog logs.
     """
@@ -982,6 +986,26 @@ def get_top_attacker_ips(config, limit=10):
             "ip": ip,
             "alerts": alerts,
             "requests": request_counts[ip],
+        })
+
+    return results
+
+def get_top_attacker_ips(config, limit=10):
+    """
+    Return top attacker IP statistics from the SQLite database.
+    """
+
+    rows = db_get_top_attacker_ips(limit)
+
+    results = []
+
+    for ip, country, country_code, alerts, requests in rows:
+        results.append({
+            "ip": ip,
+            "country": country,
+            "country_code": country_code,
+            "alerts": alerts,
+            "requests": requests,
         })
 
     return results

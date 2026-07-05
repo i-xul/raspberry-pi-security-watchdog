@@ -102,6 +102,29 @@ def get_scan_stats():
             """
         ).fetchone()
 
+def get_top_attacker_ips(limit=10):
+    """
+    Return top attacker IPs from the SQLite event store.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                ip,
+                country,
+                country_code,
+                COUNT(*) AS alerts,
+                SUM(requests) AS requests
+            FROM scan_events
+            GROUP BY ip, country, country_code
+            ORDER BY alerts DESC, requests DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return rows
+
     return {
         "total_alerts": total_alerts,
         "total_requests": total_requests,
