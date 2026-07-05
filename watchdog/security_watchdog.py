@@ -30,6 +30,7 @@ import subprocess
 import logging
 import gzip
 import json
+import sys
 from collections import defaultdict, Counter
 from pathlib import Path
 from datetime import datetime
@@ -50,6 +51,13 @@ logger = logging.getLogger("rpi-security-watchdog")
 # =============================================================================
 # Configuration paths and log parsing patterns
 # =============================================================================
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from database.database import insert_scan_event
 
 CONFIG_PATH = Path("config/config.yaml")
 
@@ -403,7 +411,16 @@ def handle_nginx_line(line, config):
                     "NGINX_SCAN_ALERT",
                     f"ip={ip} requests={count} examples={','.join(example_paths)}"
                 )
-
+                
+                insert_scan_event(
+                    timestamp=datetime.now().isoformat(timespec="seconds"),
+                    ip=ip,
+                    requests=count,
+                    examples=example_paths,
+                    country=geoip.get("country") if geoip else None,
+                    country_code=geoip.get("country_code") if geoip else None,
+                    fail2ban_jail=fail2ban_jail,
+                )
             return
 
     unicode_config = nginx_config.get("unicode_detection", {})
