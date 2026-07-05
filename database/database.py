@@ -125,6 +125,123 @@ def get_top_attacker_ips(limit=10):
 
     return rows
 
+def get_country_summary(limit=10):
+    """
+    Return attacker country summary from the SQLite event store.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                country,
+                country_code,
+                COUNT(*) AS alerts
+            FROM scan_events
+            WHERE country IS NOT NULL
+            GROUP BY country, country_code
+            ORDER BY alerts DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return rows
+
+def get_top_scan_targets(limit=10):
+    """
+    Return most common scan targets from the SQLite event store.
+
+    The examples column currently stores comma-separated paths, so this
+    function expands them in Python before counting.
+    """
+    from collections import Counter
+
+    target_counts = Counter()
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT examples FROM scan_events WHERE examples IS NOT NULL"
+        ).fetchall()
+
+    for (examples,) in rows:
+        if not examples:
+            continue
+
+        for target in examples.split(","):
+            target = target.strip()
+
+            if not target:
+                continue
+
+            target_counts[target] += 1
+
+    return target_counts.most_common(limit)
+
+def get_recent_scan_events(limit=10):
+    """
+    Return recent scan events from the SQLite event store.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                timestamp,
+                ip,
+                country,
+                country_code,
+                requests,
+                fail2ban_jail
+            FROM scan_events
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return rows
+
+def get_ip_details(ip):
+    """
+    Return aggregated information for a single attacker IP.
+    """
+    with get_connection() as conn:
+
+        summary = conn.execute(
+            """
+            SELECT
+                country,
+                country_code,
+                COUNT(*) AS alerts,
+                SUM(requests) AS requests
+            FROM scan_events
+            WHERE ip = ?
+            GROUP BY country, country_code
+            """,
+            (ip,),
+        ).fetchone()
+
+        examples = conn.execute(
+            """
+            SELECT examples
+            FROM scan_events
+            WHERE ip = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+            (ip,),
+        ).fetchone()
+
+    if summary is None:
+        return None
+
+    return {
+        "country": summary[0],
+        "country_code": summary[1],
+        "alerts": summary[2],
+        "requests": summary[3],
+        "examples": examples[0] if examples else "",
+    }
+
     return {
         "total_alerts": total_alerts,
         "total_requests": total_requests,

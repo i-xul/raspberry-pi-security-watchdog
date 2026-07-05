@@ -61,6 +61,10 @@ from database.database import (
     insert_scan_event,
     get_scan_stats,
     get_top_attacker_ips as db_get_top_attacker_ips,
+    get_country_summary,
+    get_top_scan_targets as db_get_top_scan_targets,
+    get_recent_scan_events,
+    get_ip_details,
 )
 
 CONFIG_PATH = Path("config/config.yaml")
@@ -185,30 +189,12 @@ def build_stats_message(config):
     return "\n".join(message_lines)
 
 def build_geoip_summary_message(config, limit=10):
-    country_counts = Counter()
+    """
+    Build Telegram GeoIP country summary from SQLite.
+    """
+    countries = get_country_summary(limit)
 
-    for line in read_watchdog_log_lines(config):
-        if "[NGINX_SCAN_ALERT]" not in line:
-            continue
-
-        ip_match = re.search(r"ip=([0-9.]+)", line)
-
-        if not ip_match:
-            continue
-
-        ip = ip_match.group(1)
-        geoip = lookup_geoip(config, ip)
-
-        if not geoip:
-            continue
-
-        country = geoip.get("country", "Unknown")
-        flag = geoip.get("flag", "")
-
-        label = f"{flag} {country}".strip()
-        country_counts[label] += 1
-
-    if not country_counts:
+    if not countries:
         return "No GeoIP country statistics available yet."
 
     lines = [
@@ -216,8 +202,10 @@ def build_geoip_summary_message(config, limit=10):
         "",
     ]
 
-    for country, count in country_counts.most_common(limit):
-        lines.append(f"{country} — {count} alerts")
+    for country, country_code, alerts in countries:
+        flag = country_code_to_flag(country_code)
+        label = f"{flag} {country}".strip()
+        lines.append(f"{label} — {alerts} alerts")
 
     return "\n".join(lines)
 
@@ -1010,7 +998,7 @@ def get_top_attacker_ips(config, limit=10):
 
     return results
 
-def get_top_scan_targets(config, limit=10):
+def get_top_scan_targets_from_logs(config, limit=10):
     target_counts = Counter()
 
     for line in read_watchdog_log_lines(config):
@@ -1033,6 +1021,22 @@ def get_top_scan_targets(config, limit=10):
     results = []
 
     for target, count in target_counts.most_common(limit):
+        results.append({
+            "target": target,
+            "count": count,
+        })
+
+    return results
+
+def get_top_scan_targets(config, limit=10):
+    """
+    Return top scan target statistics from the SQLite database.
+    """
+    rows = db_get_top_scan_targets(limit)
+
+    results = []
+
+    for target, count in rows:
         results.append({
             "target": target,
             "count": count,
@@ -1077,47 +1081,34 @@ def build_top_scans_message(config, limit=10):
     return "\n".join(lines)
 
 def build_recent_events_message(config, limit=10):
-    events = []
+    """
+    Build a compact Telegram message for recent scan alerts from SQLite.
+    """
+    rows = get_recent_scan_events(limit)
 
-    for line in read_watchdog_log_lines(config):
-        if "[NGINX_SCAN_ALERT]" in line:
-            event_type = "NGINX"
-
-        elif "[SSH_LOGIN_ALERT]" in line:
-            event_type = "SSH"
-
-        elif "[SAMBA_UNKNOWN_CLIENT_LOG]" in line:
-            event_type = "SAMBA"
-
-        elif "[NFS_UNKNOWN_CLIENT]" in line:
-            event_type = "NFS"
-
-        else:
-            continue
-
-        events.append((event_type, line))
-
-    if not events:
-        return "No recent watchdog events found."
-
-    events = events[-limit:]
+    if not rows:
+        return "No recent scan events found."
 
     lines = [
         "📋 Recent watchdog events",
         "",
     ]
 
-    for event_type, line in reversed(events):
-        timestamp = line.split(" ")[0]
+    for timestamp, ip, country, country_code, requests, jail in rows:
+        flag = country_code_to_flag(country_code)
 
-        if "ip=" in line:
-            ip_match = re.search(r"ip=([0-9.]+)", line)
-            ip = ip_match.group(1) if ip_match else "unknown"
-            lines.append(f"{timestamp} {event_type} {ip}")
-        else:
-            lines.append(f"{timestamp} {event_type}")
+        # Convert ISO timestamp from "YYYY-MM-DDTHH:MM:SS" to
+        # a compact Telegram-friendly "YYYY-MM-DD HH:MM" format.
+        display_time = timestamp.replace("T", " ")[:16]
 
-    return "\n".join(lines)
+        lines.extend([
+            display_time,
+            f"{flag} {ip}".strip(),
+            f"Requests: {requests}",
+            "",
+        ])
+
+    return "\n".join(lines).rstrip()
 
 def get_ip_scan_summary(config, target_ip, example_limit=10):
     alerts = 0
@@ -1159,46 +1150,57 @@ def get_ip_scan_summary(config, target_ip, example_limit=10):
 
 
 def build_ip_investigation_message(config, target_ip):
+    """
+    Build Telegram investigation message for a single IP from SQLite.
+    """
     try:
         ipaddress.ip_address(target_ip)
     except ValueError:
         return "Invalid IP address."
 
-    summary = get_ip_scan_summary(config, target_ip)
-    geoip = lookup_geoip(config, target_ip)
+    details = get_ip_details(target_ip)
 
-    ip_display = target_ip
-    country_line = "Country: unknown"
+    if not details:
+        geoip = lookup_geoip(config, target_ip)
+        country = geoip.get("country") if geoip else "unknown"
+        country_code = geoip.get("country_code") if geoip else ""
+        flag = country_code_to_flag(country_code)
 
-    if geoip:
-        if geoip.get("flag"):
-            ip_display = f"{target_ip} {geoip['flag']}"
+        ip_display = f"{target_ip} {flag}".strip()
 
-        if geoip.get("country"):
-            country_line = f"Country: {geoip['country']}"
-
-    if summary["alerts"] == 0:
         return (
             "🔎 IP investigation\n\n"
             f"IP: {ip_display}\n"
-            f"{country_line}\n\n"
+            f"Country: {country}\n\n"
             "No scan alerts found for this IP."
         )
+
+    flag = country_code_to_flag(details["country_code"])
+    ip_display = f"{target_ip} {flag}".strip()
 
     lines = [
         "🔎 IP investigation",
         "",
         f"IP: {ip_display}",
-        country_line,
+        f"Country: {details['country'] or 'unknown'}",
         "",
-        f"Alerts: {summary['alerts']}",
-        f"Requests: {summary['requests']}",
-        "",
-        "Recent examples:",
+        f"Alerts: {details['alerts']}",
+        f"Requests: {details['requests']}",
     ]
 
-    for example in summary["examples"]:
-        lines.append(f"- {example}")
+    examples = details.get("examples", "")
+
+    if examples:
+        lines.extend([
+            "",
+            "Recent examples:",
+        ])
+
+        for example in examples.split(",")[:10]:
+            example = example.strip()
+
+            if example:
+                lines.append(f"- {example}")
 
     return "\n".join(lines)
 

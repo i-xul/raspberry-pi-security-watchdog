@@ -18,7 +18,6 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "attack_history.db"
 
-
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -37,8 +36,26 @@ def init_db():
             )
         """)
 
-        conn.commit()
+        # ----------------------------------------------------------------------
+        # Performance indexes
+        # ----------------------------------------------------------------------
 
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_scan_ip
+            ON scan_events(ip)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_scan_timestamp
+            ON scan_events(timestamp)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_scan_country_code
+            ON scan_events(country_code)
+        """)
+
+        conn.commit()
 
 if __name__ == "__main__":
     init_db()
