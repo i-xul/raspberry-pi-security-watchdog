@@ -74,3 +74,37 @@ def get_scan_event_count():
     with get_connection() as conn:
         cursor = conn.execute("SELECT COUNT(*) FROM scan_events")
         return cursor.fetchone()[0]
+
+def get_scan_stats():
+    """
+    Return high-level scan statistics from the SQLite event store.
+    """
+    with get_connection() as conn:
+        total_alerts = conn.execute(
+            "SELECT COUNT(*) FROM scan_events"
+        ).fetchone()[0]
+
+        total_requests = conn.execute(
+            "SELECT COALESCE(SUM(requests), 0) FROM scan_events"
+        ).fetchone()[0]
+
+        unique_ips = conn.execute(
+            "SELECT COUNT(DISTINCT ip) FROM scan_events"
+        ).fetchone()[0]
+
+        top_attacker = conn.execute(
+            """
+            SELECT ip, country, country_code, COUNT(*) AS alerts, SUM(requests) AS requests
+            FROM scan_events
+            GROUP BY ip, country, country_code
+            ORDER BY alerts DESC, requests DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    return {
+        "total_alerts": total_alerts,
+        "total_requests": total_requests,
+        "unique_ips": unique_ips,
+        "top_attacker": top_attacker,
+    }

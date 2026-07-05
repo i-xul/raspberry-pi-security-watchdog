@@ -57,7 +57,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from database.database import insert_scan_event
+from database.database import insert_scan_event, get_scan_stats
 
 CONFIG_PATH = Path("config/config.yaml")
 
@@ -147,61 +147,35 @@ def get_telegram_updates(bot_token, offset=None, timeout=30):
 
 def build_stats_message(config):
     """
-    Build a high-level Telegram summary of scan activity.
+    Build a high-level Telegram summary of scan activity from SQLite.
     """
-    top_ips = get_top_attacker_ips(config, limit=1)
-    top_scans = get_top_scan_targets(config, limit=1)
-
-    unique_ips = set()
-    total_alerts = 0
-    total_requests = 0
-
-    for line in read_watchdog_log_lines(config):
-        if "[NGINX_SCAN_ALERT]" not in line:
-            continue
-
-        total_alerts += 1
-
-        ip_match = re.search(r"ip=([0-9.]+)", line)
-        requests_match = re.search(r"requests=(\d+)", line)
-
-        if ip_match:
-            unique_ips.add(ip_match.group(1))
-
-        if requests_match:
-            total_requests += int(requests_match.group(1))
+    stats = get_scan_stats()
+    top_attacker = stats["top_attacker"]
 
     message_lines = [
         "📊 RPi Security Watchdog Stats",
         "",
-        f"Total scan alerts: {total_alerts}",
-        f"Total scan requests: {total_requests}",
-        f"Unique attacker IPs: {len(unique_ips)}",
+        f"Total scan alerts: {stats['total_alerts']}",
+        f"Total scan requests: {stats['total_requests']}",
+        f"Unique attacker IPs: {stats['unique_ips']}",
         "",
     ]
 
-    if top_ips:
-        ip = top_ips[0]["ip"]
-        geoip = lookup_geoip(config, ip)
+    if top_attacker:
+        ip, country, country_code, alerts, requests = top_attacker
+        flag = country_code_to_flag(country_code)
 
         ip_display = ip
 
-        if geoip and geoip.get("flag"):
-            ip_display = f"{ip} {geoip['flag']}"
+        if flag:
+            ip_display = f"{ip} {flag}"
 
         message_lines.extend([
             "Top attacker:",
             ip_display,
-            f"Alerts: {top_ips[0]['alerts']}",
-            f"Requests: {top_ips[0]['requests']}",
-            "",
-        ])
-
-    if top_scans:
-        message_lines.extend([
-            "Top scan target:",
-            top_scans[0]["target"],
-            f"Hits: {top_scans[0]['count']}",
+            f"Country: {country or 'Unknown'}",
+            f"Alerts: {alerts}",
+            f"Requests: {requests}",
         ])
 
     return "\n".join(message_lines)
