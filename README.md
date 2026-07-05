@@ -119,10 +119,10 @@ sudo visudo
 Add the following line:
 
 ```text
-hmasi ALL=(root) NOPASSWD: /usr/bin/fail2ban-client
+YOUR_USERNAME ALL=(root) NOPASSWD: /usr/bin/fail2ban-client
 ```
 
-Replace `hmasi` with the user account running the watchdog service.
+Replace `YOUR_USERNAME` with the user account running the watchdog service.
 
 This allows the watchdog to execute:
 
