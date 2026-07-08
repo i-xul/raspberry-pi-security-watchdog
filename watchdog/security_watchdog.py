@@ -784,25 +784,6 @@ def send_startup_notification(config):
         f"host={hostname}"
     )
 
-def read_watchdog_log_lines(config):
-    log_path = Path(config["logs"].get("watchdog_log", "logs/security_watchdog.log"))
-    log_files = sorted(log_path.parent.glob(f"{log_path.name}*"))
-
-    for path in log_files:
-        if path.suffix == ".gz":
-            opener = gzip.open
-            mode = "rt"
-        else:
-            opener = open
-            mode = "r"
-
-        try:
-            with opener(path, mode, encoding="utf-8", errors="replace") as f:
-                for line in f:
-                    yield line.rstrip("\n")
-        except FileNotFoundError:
-            continue
-
 # =============================================================================
 # GeoIP enrichment
 # =============================================================================
@@ -940,44 +921,6 @@ def get_fail2ban_status(ip):
 # Statistics and Telegram report builders
 # =============================================================================
 
-def get_top_attacker_ips_from_logs(config, limit=10):
-    """
-    Build attacker statistics from persisted watchdog logs.
-    """
-    alert_counts = Counter()
-    request_counts = Counter()
-
-    for line in read_watchdog_log_lines(config):
-        if "[NGINX_SCAN_ALERT]" not in line:
-            continue
-
-        ip_match = re.search(r"ip=([0-9.]+)", line)
-        requests_match = re.search(r"requests=(\d+)", line)
-
-        if not ip_match:
-            continue
-
-        ip = ip_match.group(1)
-
-        if ip_allowed(ip, config["allowed_networks"]):
-            continue
-
-        requests = int(requests_match.group(1)) if requests_match else 0
-
-        alert_counts[ip] += 1
-        request_counts[ip] += requests
-
-    results = []
-
-    for ip, alerts in alert_counts.most_common(limit):
-        results.append({
-            "ip": ip,
-            "alerts": alerts,
-            "requests": request_counts[ip],
-        })
-
-    return results
-
 def get_top_attacker_ips(config, limit=10):
     """
     Return top attacker IP statistics from the SQLite database.
@@ -994,36 +937,6 @@ def get_top_attacker_ips(config, limit=10):
             "country_code": country_code,
             "alerts": alerts,
             "requests": requests,
-        })
-
-    return results
-
-def get_top_scan_targets_from_logs(config, limit=10):
-    target_counts = Counter()
-
-    for line in read_watchdog_log_lines(config):
-        if "[NGINX_SCAN_ALERT]" not in line:
-            continue
-
-        examples_match = re.search(r"examples=(.+)$", line)
-
-        if not examples_match:
-            continue
-
-        for target in examples_match.group(1).split(","):
-            target = target.strip()
-
-            if not target:
-                continue
-
-            target_counts[target] += 1
-
-    results = []
-
-    for target, count in target_counts.most_common(limit):
-        results.append({
-            "target": target,
-            "count": count,
         })
 
     return results
@@ -1109,45 +1022,6 @@ def build_recent_events_message(config, limit=10):
         ])
 
     return "\n".join(lines).rstrip()
-
-def get_ip_scan_summary(config, target_ip, example_limit=10):
-    alerts = 0
-    requests_total = 0
-    examples = []
-
-    for line in read_watchdog_log_lines(config):
-        if "[NGINX_SCAN_ALERT]" not in line:
-            continue
-
-        ip_match = re.search(r"ip=([0-9.]+)", line)
-
-        if not ip_match:
-            continue
-
-        ip = ip_match.group(1)
-
-        if ip != target_ip:
-            continue
-
-        requests_match = re.search(r"requests=(\d+)", line)
-        examples_match = re.search(r"examples=(.+)$", line)
-
-        alerts += 1
-        requests_total += int(requests_match.group(1)) if requests_match else 0
-
-        if examples_match:
-            for example in examples_match.group(1).split(","):
-                example = example.strip()
-                if example and example not in examples:
-                    examples.append(example)
-
-    return {
-        "ip": target_ip,
-        "alerts": alerts,
-        "requests": requests_total,
-        "examples": examples[:example_limit],
-    }
-
 
 def build_ip_investigation_message(config, target_ip):
     """
