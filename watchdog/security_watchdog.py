@@ -67,6 +67,7 @@ from database.database import (
     get_recent_scan_events,
     get_ip_details,
     get_ssh_stats,
+    get_recent_ssh_events,
 )
 
 CONFIG_PATH = Path("config/config.yaml")
@@ -204,6 +205,43 @@ def build_ssh_stats_message(config):
         f"Blocked: {stats['blocked_logins']}\n"
         f"Unique IPs: {stats['unique_ips']}"
     )
+
+def build_recent_ssh_events_message(config, limit=10):
+    """
+    Build a Telegram message containing recent SSH login events.
+    """
+    rows = get_recent_ssh_events(limit)
+
+    if not rows:
+        return "🔐 No SSH events found."
+
+    lines = [
+        "🔐 Recent SSH logins",
+        "",
+    ]
+
+    for (
+        timestamp,
+        event_type,
+        user,
+        ip,
+        port,
+        allowed,
+        country,
+        country_code,
+    ) in rows:
+
+        flag = country_code_to_flag(country_code)
+
+        lines.extend([
+            timestamp.replace("T", " ")[:16],
+            f"{flag} {ip}".strip(),
+            f"User: {user or '-'}",
+            f"Allowed: {'Yes' if allowed else 'No'}",
+            "",
+        ])
+
+    return "\n".join(lines)
 
 def build_geoip_summary_message(config, limit=10):
     """
@@ -1197,6 +1235,10 @@ def watch_telegram_commands(config):
                 reply = build_ssh_stats_message(config)
                 send_telegram(bot_token, chat_id, reply)
 
+            elif text == "/recent_ssh":
+                reply = build_recent_ssh_events_message(config)
+                send_telegram(bot_token, chat_id, reply)
+
             elif text == "/geoip":
                 reply = build_geoip_summary_message(config)
                 send_telegram(bot_token, chat_id, reply)
@@ -1212,6 +1254,7 @@ def watch_telegram_commands(config):
                     "/geoip - show attacker country summary\n"
                     "/help - show this help message\n"
                     "/ssh - show SSH login statistics\n"
+                    "/recent_ssh - show recent SSH logins\n"
                 )
                 send_telegram(bot_token, chat_id, reply)
 
