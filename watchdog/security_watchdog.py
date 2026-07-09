@@ -236,8 +236,8 @@ def build_recent_ssh_events_message(config, limit=10):
         lines.extend([
             timestamp.replace("T", " ")[:16],
             f"{flag} {ip}".strip(),
-            f"User: {user or '-'}",
-            f"Allowed: {'Yes' if allowed else 'No'}",
+            f"{user or '-'}",
+            f"{'✓ Allowed' if allowed else '⚠ Blocked'}",
             "",
         ])
 
