@@ -248,3 +248,45 @@ def get_ip_details(ip):
         "unique_ips": unique_ips,
         "top_attacker": top_attacker,
     }
+
+def insert_ssh_event(
+    timestamp,
+    event_type,
+    ip,
+    user=None,
+    port=None,
+    allowed=False,
+    country=None,
+    country_code=None,
+):
+    """
+    Insert an SSH-related security event into the event database.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO ssh_events (
+                timestamp,
+                event_type,
+                user,
+                ip,
+                port,
+                allowed,
+                country,
+                country_code
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                timestamp,
+                event_type,
+                user,
+                ip,
+                port,
+                1 if allowed else 0,
+                country,
+                country_code,
+            ),
+        )
+
+        conn.commit()
