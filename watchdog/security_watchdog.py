@@ -202,8 +202,8 @@ def build_ssh_stats_message(config):
     return (
         "🔐 SSH activity\n\n"
         f"Total logins: {stats['total_logins']}\n"
-        f"Allowed: {stats['allowed_logins']}\n"
-        f"Blocked: {stats['blocked_logins']}\n"
+        f"Trusted: {stats['allowed_logins']}\n"
+        f"Untrusted: {stats['blocked_logins']}\n"
         f"Unique IPs: {stats['unique_ips']}"
     )
 
@@ -236,7 +236,7 @@ def build_recent_ssh_events_message(config, limit=10):
             timestamp.replace("T", " ")[:16],
             format_ip_label(config, ip, country_code),
             f"{user or '-'}",
-            f"{'✓ Allowed' if allowed else '⚠ Blocked'}",
+            f"{'✓ Allowed' if allowed else '⚠ Untrusted'}",
             "",
         ])
 
@@ -911,11 +911,11 @@ def format_ip_label(config, ip, country_code=None):
     except ValueError:
         return ip
 
-    if ip_obj.is_private:
-        return f"🏠 {ip}"
-
     if ip_obj in ipaddress.ip_network("100.64.0.0/10"):
         return f"🔒 {ip}"
+
+    if ip_obj.is_private:
+        return f"🏠 {ip}"
 
     flag = country_code_to_flag(country_code)
 
