@@ -1210,7 +1210,7 @@ def watch_telegram_commands(config):
                     "/top_scans - show most common scan targets\n"
                     "/stats - show overall scan statistics\n"
                     "/geoip - show attacker country summary\n"
-                    "/help - show this help message"
+                    "/help - show this help message\n"
                     "/ssh - show SSH login statistics\n"
                 )
                 send_telegram(bot_token, chat_id, reply)
