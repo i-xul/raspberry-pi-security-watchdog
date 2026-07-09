@@ -59,6 +59,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from database.database import (
     insert_scan_event,
+    insert_ssh_event,
     get_scan_stats,
     get_top_attacker_ips as db_get_top_attacker_ips,
     get_country_summary,
@@ -418,6 +419,15 @@ def handle_line(line, config):
         allowed_networks = config["allowed_networks"]
 
         if ip_allowed(ip, allowed_networks):
+            insert_ssh_event(
+                timestamp=datetime.now().isoformat(timespec="seconds"),
+                event_type="SSH_LOGIN",
+                user=user,
+                ip=ip,
+                port=port,
+                allowed=True,
+            )
+
             logger.info(f"Allowed SSH login: user={user} ip={ip}")
             return
 
@@ -437,6 +447,19 @@ def handle_line(line, config):
             telegram["bot_token"],
             telegram["chat_id"],
             message,
+        )
+
+        geoip = lookup_geoip(config, ip)
+
+        insert_ssh_event(
+            timestamp=datetime.now().isoformat(timespec="seconds"),
+            event_type="SSH_LOGIN_ALERT",
+            user=user,
+            ip=ip,
+            port=port,
+            allowed=False,
+            country=geoip.get("country") if geoip else None,
+            country_code=geoip.get("country_code") if geoip else None,
         )
 
         logger.info(f"ALERT SSH login: user={user} ip={ip}")
