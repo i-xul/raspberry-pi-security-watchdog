@@ -55,6 +55,36 @@ def init_db():
             ON scan_events(country_code)
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ssh_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                user TEXT,
+                ip TEXT NOT NULL,
+                port TEXT,
+                allowed INTEGER NOT NULL DEFAULT 0,
+                country TEXT,
+                country_code TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ssh_ip
+            ON ssh_events(ip)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ssh_timestamp
+            ON ssh_events(timestamp)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ssh_event_type
+            ON ssh_events(event_type)
+        """)
+
         conn.commit()
 
 if __name__ == "__main__":
