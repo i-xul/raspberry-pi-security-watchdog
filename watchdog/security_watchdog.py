@@ -100,6 +100,7 @@ suspicious_ips = defaultdict(
 last_alert_times = {}
 
 last_exposed_services = set()
+last_seen_nfs_clients = set()
 
 state_lock = threading.RLock()
 
@@ -691,8 +692,12 @@ def check_nfs_clients(config):
         if not ip_allowed(peer_ip, allowed_networks):
             unknown_clients.add(peer_ip)
 
-    if seen_clients:
-        logger.info(f"NFS clients seen: {', '.join(sorted(seen_clients))}")
+    global last_seen_nfs_clients
+
+    with state_lock:
+        if seen_clients and seen_clients != last_seen_nfs_clients:
+            logger.info(f"NFS clients seen: {', '.join(sorted(seen_clients))}")
+            last_seen_nfs_clients = seen_clients
 
     if not unknown_clients:
         return
