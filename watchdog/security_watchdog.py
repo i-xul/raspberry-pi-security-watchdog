@@ -66,6 +66,7 @@ from database.database import (
     get_top_scan_targets as db_get_top_scan_targets,
     get_recent_scan_events,
     get_ip_details,
+    get_ssh_stats,
 )
 
 CONFIG_PATH = Path("config/config.yaml")
@@ -189,6 +190,20 @@ def build_stats_message(config):
         ])
 
     return "\n".join(message_lines)
+
+def build_ssh_stats_message(config):
+    """
+    Build a compact Telegram summary for SSH login activity.
+    """
+    stats = get_ssh_stats()
+
+    return (
+        "🔐 SSH activity\n\n"
+        f"Total logins: {stats['total_logins']}\n"
+        f"Allowed: {stats['allowed_logins']}\n"
+        f"Blocked: {stats['blocked_logins']}\n"
+        f"Unique IPs: {stats['unique_ips']}"
+    )
 
 def build_geoip_summary_message(config, limit=10):
     """
@@ -1177,6 +1192,10 @@ def watch_telegram_commands(config):
             elif text == "/stats":
                 reply = build_stats_message(config)
                 send_telegram(bot_token, chat_id, reply)
+            
+            elif text == "/ssh":
+                reply = build_ssh_stats_message(config)
+                send_telegram(bot_token, chat_id, reply)
 
             elif text == "/geoip":
                 reply = build_geoip_summary_message(config)
@@ -1192,6 +1211,7 @@ def watch_telegram_commands(config):
                     "/stats - show overall scan statistics\n"
                     "/geoip - show attacker country summary\n"
                     "/help - show this help message"
+                    "/ssh - show SSH login statistics\n"
                 )
                 send_telegram(bot_token, chat_id, reply)
 
