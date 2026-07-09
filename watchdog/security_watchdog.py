@@ -68,6 +68,7 @@ from database.database import (
     get_ip_details,
     get_ssh_stats,
     get_recent_ssh_events,
+    get_top_ssh_ips,
 )
 
 CONFIG_PATH = Path("config/config.yaml")
@@ -240,6 +241,33 @@ def build_recent_ssh_events_message(config, limit=10):
             f"{'✓ Allowed' if allowed else '⚠ Blocked'}",
             "",
         ])
+
+    return "\n".join(lines)
+
+def build_top_ssh_ips_message(config, limit=10):
+    """
+    Build a Telegram message containing the most common SSH source IPs.
+    """
+    rows = get_top_ssh_ips(limit)
+
+    if not rows:
+        return "🔐 No SSH events found."
+
+    lines = [
+        "🔐 Top SSH sources",
+        "",
+    ]
+
+    for index, (ip, country, country_code, logins) in enumerate(rows, start=1):
+        flag = country_code_to_flag(country_code)
+
+        lines.append(
+            f"{index}. {flag} {ip}".strip()
+        )
+        lines.append(
+            f"   Logins: {logins}"
+        )
+        lines.append("")
 
     return "\n".join(lines)
 
@@ -1239,6 +1267,10 @@ def watch_telegram_commands(config):
                 reply = build_recent_ssh_events_message(config)
                 send_telegram(bot_token, chat_id, reply)
 
+            elif text == "/top_ssh":
+                reply = build_top_ssh_ips_message(config)
+                send_telegram(bot_token, chat_id, reply)
+
             elif text == "/geoip":
                 reply = build_geoip_summary_message(config)
                 send_telegram(bot_token, chat_id, reply)
@@ -1255,6 +1287,7 @@ def watch_telegram_commands(config):
                     "/help - show this help message\n"
                     "/ssh - show SSH login statistics\n"
                     "/recent_ssh - show recent SSH logins\n"
+                    "/top_ssh - show top SSH source IPs\n"
                 )
                 send_telegram(bot_token, chat_id, reply)
 
