@@ -158,6 +158,10 @@ def get_telegram_updates(bot_token, offset=None, timeout=30):
         logger.error(f"Telegram update fetch failed: {error}")
         return None
 
+# =============================================================================
+# Scan Telegram messages
+# =============================================================================
+
 def build_stats_message(config):
     """
     Build a high-level Telegram summary of scan activity from SQLite.
@@ -192,6 +196,10 @@ def build_stats_message(config):
         ])
 
     return "\n".join(message_lines)
+
+# =============================================================================
+# SSH Telegram messages
+# =============================================================================
 
 def build_ssh_stats_message(config):
     """
@@ -316,7 +324,7 @@ def ip_allowed(ip, allowed_networks):
 
 def follow_file(path):
     """
-    Append a structured watchdog event to the persistent event log.
+    Follow a log file and continue reading after log rotation.
     """
     path = Path(path)
 
@@ -357,19 +365,16 @@ def contains_unicode(value):
     return any(ord(char) > 127 for char in value)
 
 def should_send_alert(ip, cooldown_minutes):
+    """
+    Return True if an alert should be sent for the IP based on cooldown state.
+    """
     now = time.time()
     cooldown_seconds = cooldown_minutes * 60
 
     with state_lock:
         last_alert = last_alert_times.get(ip)
 
-    if last_alert is None:
-        with state_lock:
-            last_alert_times[ip] = now
-            return True
-
-    if now - last_alert >= cooldown_seconds:
-        with state_lock:
+        if last_alert is None or now - last_alert >= cooldown_seconds:
             last_alert_times[ip] = now
             return True
 
@@ -890,7 +895,7 @@ def send_startup_notification(config):
     )
 
 # =============================================================================
-# GeoIP enrichment
+# Telegram helper functions
 # =============================================================================
 
 def country_code_to_flag(country_code):
@@ -965,8 +970,8 @@ def lookup_geoip(config, ip):
     with state_lock:
         cache = load_geoip_cache(config)
 
-    if ip in cache:
-        return cache[ip]
+        if ip in cache:
+            return cache[ip]
 
     timeout = geoip_config.get("timeout_seconds", 5)
     url = f"http://ip-api.com/json/{ip}?fields=status,country,countryCode,query"
@@ -990,6 +995,7 @@ def lookup_geoip(config, ip):
     }
 
     with state_lock:
+        cache = load_geoip_cache(config)
         cache[ip] = geoip_result
         save_geoip_cache(config, cache)
 
@@ -1320,7 +1326,6 @@ def main():
 
     send_startup_notification(config)
 
-    # check_service_exposure(config)
     check_samba_client_logs(config)
 
     ssh_thread = threading.Thread(
