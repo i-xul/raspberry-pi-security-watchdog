@@ -232,11 +232,9 @@ def build_recent_ssh_events_message(config, limit=10):
         country_code,
     ) in rows:
 
-        flag = country_code_to_flag(country_code)
-
         lines.extend([
             timestamp.replace("T", " ")[:16],
-            f"{flag} {ip}".strip(),
+            format_ip_label(config, ip, country_code),
             f"{user or '-'}",
             f"{'✓ Allowed' if allowed else '⚠ Blocked'}",
             "",
@@ -259,10 +257,8 @@ def build_top_ssh_ips_message(config, limit=10):
     ]
 
     for index, (ip, country, country_code, logins) in enumerate(rows, start=1):
-        flag = country_code_to_flag(country_code)
-
         lines.append(
-            f"{index}. {flag} {ip}".strip()
+            f"{index}. {format_ip_label(config, ip, country_code)}"
         )
         lines.append(
             f"   Logins: {logins}"
@@ -906,6 +902,27 @@ def country_code_to_flag(country_code):
         for char in country_code
     )
 
+def format_ip_label(config, ip, country_code=None):
+    """
+    Format an IP address for Telegram output using local, VPN, or Internet labels.
+    """
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+
+    if ip_obj.is_private:
+        return f"🏠 {ip}"
+
+    if ip_obj in ipaddress.ip_network("100.64.0.0/10"):
+        return f"🔒 {ip}"
+
+    flag = country_code_to_flag(country_code)
+
+    if flag:
+        return f"🌐 {ip} {flag}"
+
+    return f"🌐 {ip}"
 
 def load_geoip_cache(config):
     cache_path = Path(config.get("geoip", {}).get("cache_file", "logs/geoip_cache.json"))
