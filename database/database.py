@@ -305,3 +305,84 @@ def insert_ssh_event(
         )
 
         conn.commit()
+
+# =============================================================================
+# SSH event queries
+# =============================================================================
+
+def get_ssh_stats():
+    """
+    Return high-level SSH login statistics from the SQLite event store.
+    """
+    with get_connection() as conn:
+        total_logins = conn.execute(
+            "SELECT COUNT(*) FROM ssh_events"
+        ).fetchone()[0]
+
+        allowed_logins = conn.execute(
+            "SELECT COUNT(*) FROM ssh_events WHERE allowed = 1"
+        ).fetchone()[0]
+
+        blocked_logins = conn.execute(
+            "SELECT COUNT(*) FROM ssh_events WHERE allowed = 0"
+        ).fetchone()[0]
+
+        unique_ips = conn.execute(
+            "SELECT COUNT(DISTINCT ip) FROM ssh_events"
+        ).fetchone()[0]
+
+    return {
+        "total_logins": total_logins,
+        "allowed_logins": allowed_logins,
+        "blocked_logins": blocked_logins,
+        "unique_ips": unique_ips,
+    }
+
+
+def get_recent_ssh_events(limit=10):
+    """
+    Return recent SSH login events from the SQLite event store.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                timestamp,
+                event_type,
+                user,
+                ip,
+                port,
+                allowed,
+                country,
+                country_code
+            FROM ssh_events
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return rows
+
+
+def get_top_ssh_ips(limit=10):
+    """
+    Return top SSH source IPs from the SQLite event store.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                ip,
+                country,
+                country_code,
+                COUNT(*) AS logins
+            FROM ssh_events
+            GROUP BY ip, country, country_code
+            ORDER BY logins DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return rows
