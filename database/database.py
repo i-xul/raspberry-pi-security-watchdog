@@ -19,11 +19,19 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "attack_history.db"
 
+# =============================================================================
+# Database connection
+# =============================================================================
+
 def get_connection():
     """
     Return a SQLite connection to the attack history database.
     """
     return sqlite3.connect(DB_PATH)
+
+# =============================================================================
+# Scan event storage
+# =============================================================================
 
 def insert_scan_event(
     timestamp,
@@ -66,6 +74,9 @@ def insert_scan_event(
 
         conn.commit()
 
+# =============================================================================
+# Scan event queries
+# =============================================================================
 
 def get_scan_event_count():
     """
@@ -248,6 +259,10 @@ def get_ip_details(ip):
         "unique_ips": unique_ips,
         "top_attacker": top_attacker,
     }
+
+# =============================================================================
+# SSH event storage
+# =============================================================================
 
 def insert_ssh_event(
     timestamp,
